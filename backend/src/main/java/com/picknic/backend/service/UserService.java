@@ -37,7 +37,7 @@ public class UserService {
         UserPoint userPoint = userPointRepository.findByUserId(userId)
                 .orElse(new UserPoint(userId));
 
-        long points = userPoint.getTotalAccumulatedPoints();
+        long points = userPoint.getCurrentPoints();
 
         // 2. Redis에서 랭킹 조회 (0-based → 1-based 변환)
         Long redisRank = redisUtil.getMyRank("leaderboard:weekly", userId);
