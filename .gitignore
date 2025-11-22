@@ -1,0 +1,8 @@
+# --- IDE Settings ---
+.idea/
+*.iml
+.vscode/
+
+# --- OS Files ---
+.DS_Store
+Thumbs.db
