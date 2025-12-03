@@ -1,6 +1,6 @@
-package com.example.demo.controller;
+package com.picknic.backend.controller;
 
-import com.example.demo.service.StudentCardService;
+import com.picknic.backend.service.StudentCardService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;

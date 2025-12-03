@@ -1,4 +1,4 @@
-package com.example.demo.service;
+package com.picknic.backend.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -13,7 +13,6 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.util.*;
-import com.google.cloud.vision.v1.*;
 
 @Service
 @RequiredArgsConstructor
