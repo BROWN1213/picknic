@@ -1,5 +1,6 @@
 package com.picknic.backend.service;
 
+import com.picknic.backend.domain.PointType;
 import com.picknic.backend.domain.Vote;
 import com.picknic.backend.domain.VoteOption;
 import com.picknic.backend.domain.VoteRecord;
@@ -7,11 +8,13 @@ import com.picknic.backend.dto.vote.CastVoteRequest;
 import com.picknic.backend.dto.vote.CreateVoteRequest;
 import com.picknic.backend.dto.vote.VoteResponse;
 import com.picknic.backend.dto.vote.VoteResultResponse;
+import com.picknic.backend.event.VoteCompletedEvent;
 import com.picknic.backend.repository.VoteOptionRepository;
 import com.picknic.backend.repository.VoteRecordRepository;
 import com.picknic.backend.repository.VoteRepository;
 import com.picknic.backend.util.RedisUtil;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,6 +33,7 @@ public class VoteService {
     private final VoteOptionRepository voteOptionRepository;
     private final VoteRecordRepository voteRecordRepository;
     private final RedisUtil redisUtil;
+    private final ApplicationEventPublisher eventPublisher;
 
     // 투표 생성
     public VoteResponse createVote(CreateVoteRequest request, String userId) {
@@ -54,7 +58,17 @@ public class VoteService {
         // 3. 저장
         Vote savedVote = voteRepository.save(vote);
 
-        // 4. 응답 생성
+        // 4. 포인트 적립 이벤트 발행 (+10P)
+        eventPublisher.publishEvent(new VoteCompletedEvent(
+                this,
+                userId,
+                savedVote.getId(),
+                PointType.CREATE,
+                10,
+                null // schoolName (향후 사용자 정보에서 가져올 수 있음)
+        ));
+
+        // 5. 응답 생성
         return VoteResponse.from(savedVote, false, null);
     }
 
@@ -111,7 +125,17 @@ public class VoteService {
         option.incrementVoteCount();
         vote.incrementTotalVotes();
 
-        // 9. 응답 생성
+        // 9. 포인트 적립 이벤트 발행 (+1P)
+        eventPublisher.publishEvent(new VoteCompletedEvent(
+                this,
+                userId,
+                voteId,
+                PointType.VOTE,
+                1,
+                null // schoolName (향후 사용자 정보에서 가져올 수 있음)
+        ));
+
+        // 10. 응답 생성
         return VoteResponse.from(vote, true, request.getOptionId());
     }
 
