@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Button } from "./components/ui/button";
 import { Badge } from "./components/ui/badge";
 import {
@@ -51,6 +51,24 @@ export default function App() {
   const [createdVotes, setCreatedVotes] = useState<Vote[]>([]);
   const voteRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
   
+  // 백엔드 Health Check (14분마다 실행)
+  useEffect(() => {
+    const healthCheck = async () => {
+      try {
+        const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+        await fetch(`${baseUrl}/health`);
+        console.log('Health check sent');
+      } catch (error) {
+        console.error('Health check failed', error);
+      }
+    };
+
+    healthCheck();
+    const interval = setInterval(healthCheck, 14 * 60 * 1000); // 14분
+
+    return () => clearInterval(interval);
+  }, []);
+
   // 알림 상태
   const [notifications, setNotifications] = useState([
     {
