@@ -27,17 +27,6 @@ export function LoginScreen({ onEmailSignup, onSocialLogin }: LoginScreenProps) 
 
         {/* Login Buttons */}
         <div className="space-y-3">
-          {/* Kakao Login */}
-          <Button
-            onClick={onSocialLogin}
-            className="w-full h-14 bg-[#FEE500] hover:bg-[#FDD835] text-black border-0 gap-3 transition-all hover:scale-[1.02]"
-          >
-            <div className="w-6 h-6 rounded-full bg-black flex items-center justify-center">
-              <span className="text-[#FEE500] text-xs">K</span>
-            </div>
-            <span>카카오로 시작하기</span>
-          </Button>
-
           {/* Google Login */}
           <Button
             onClick={onSocialLogin}
@@ -62,21 +51,6 @@ export function LoginScreen({ onEmailSignup, onSocialLogin }: LoginScreenProps) 
               />
             </svg>
             <span>Google로 시작하기</span>
-          </Button>
-
-          {/* Divider */}
-          <div className="flex items-center gap-4 py-2">
-            <div className="flex-1 h-px bg-white/10" />
-            <span className="text-sm text-muted-foreground">또는</span>
-            <div className="flex-1 h-px bg-white/10" />
-          </div>
-
-          {/* Sign Up */}
-          <Button
-            onClick={onEmailSignup}
-            className="w-full h-14 bg-gradient-to-r from-lime-500 to-emerald-500 hover:from-lime-600 hover:to-emerald-600 text-black border-0 gap-2 transition-all hover:scale-[1.02]"
-          >
-            <span>이메일로 회원가입</span>
           </Button>
         </div>
 

@@ -25,7 +25,7 @@ import { RankingBoard } from "./components/RankingBoard";
 import { ProfileSection } from "./components/ProfileSection";
 import { RewardModal } from "./components/RewardModal";
 import { LoginScreen } from "./components/LoginScreen";
-import { SchoolVerification } from "./components/SchoolVerification";
+import { StudentIdVerification } from "./components/StudentIdVerification";
 import { MyVotesSheet } from "./components/MyVotesSheet";
 import { NotificationPopover } from "./components/NotificationPopover";
 import { Toaster } from "./components/ui/sonner";
@@ -396,8 +396,8 @@ export default function App() {
   };
 
   const handleSocialLogin = () => {
-    // 소셜 로그인은 바로 메인으로
-    setAuthStep("main");
+    // 소셜 로그인 후 학생증 인증으로 이동
+    setAuthStep("school-verify");
     setVerifiedSchool(null);
     toast.success("로그인 되었습니다!");
   };
@@ -437,9 +437,9 @@ export default function App() {
     return (
       <>
         <Toaster position="top-center" />
-        <SchoolVerification 
+        <StudentIdVerification 
           onComplete={handleSchoolVerificationComplete}
-          onSkip={handleSchoolVerificationSkip}
+          onBack={() => setAuthStep("login")}
         />
       </>
     );
