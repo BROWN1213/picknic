@@ -77,23 +77,7 @@ export default function App() {
     });
   }, [auth.user]);
 
-  // 백엔드 Health Check (14분마다 실행)
-  useEffect(() => {
-    const healthCheck = async () => {
-      try {
-        const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8080';
-        await fetch(`${baseUrl}/health`);
-        console.log('Health check sent');
-      } catch (error) {
-        console.error('Health check failed', error);
-      }
-    };
 
-    healthCheck();
-    const interval = setInterval(healthCheck, 14 * 60 * 1000); // 14분
-
-    return () => clearInterval(interval);
-  }, []);
 
   // Load user profile and votes on mount
   useEffect(() => {
