@@ -12,7 +12,7 @@ const cognitoAuthConfig = {
   client_id: import.meta.env.VITE_COGNITO_CLIENT_ID,
 
   // Redirect after login
-  redirect_uri: `${window.location.origin}/auth/callback`,
+  redirect_uri: import.meta.env.VITE_COGNITO_REDIRECT_URI || `${window.location.origin}/auth/callback`,
 
   // Redirect after logout
   post_logout_redirect_uri: window.location.origin,
