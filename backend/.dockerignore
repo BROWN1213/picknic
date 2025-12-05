@@ -4,3 +4,12 @@ out
 .git
 .idea
 *.md
+
+# Environment variables
+.env
+.env.*
+
+# Local data directories
+data/
+postgres/
+redis/

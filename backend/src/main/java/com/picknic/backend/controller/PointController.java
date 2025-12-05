@@ -3,6 +3,7 @@ package com.picknic.backend.controller;
 import com.picknic.backend.domain.UserPoint;
 import com.picknic.backend.dto.common.ApiResponse;
 import com.picknic.backend.dto.point.DailyCheckInResponse;
+import com.picknic.backend.dto.point.DailyLimitResponse;
 import com.picknic.backend.dto.point.PointHistoryResponse;
 import com.picknic.backend.dto.reward.RewardRedeemResponse;
 import com.picknic.backend.repository.UserPointRepository;
@@ -97,6 +98,52 @@ public class PointController {
 
         // ApiResponse로 래핑하여 반환
         return ResponseEntity.ok(ApiResponse.success(history));
+    }
+
+    /**
+     * 일일 제한 정보 조회
+     *
+     * GET /points/daily-limit
+     *
+     * @return ApiResponse<DailyLimitResponse>
+     */
+    @Operation(
+            summary = "일일 제한 정보 조회",
+            description = "투표 참여 및 생성의 일일 남은 횟수를 조회합니다."
+    )
+    @ApiResponses(value = {
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "200",
+                    description = "일일 제한 정보 조회 성공",
+                    content = @Content(
+                            mediaType = "application/json",
+                            schema = @Schema(implementation = ApiResponse.class),
+                            examples = @ExampleObject(value = """
+                                    {
+                                      "success": true,
+                                      "data": {
+                                        "voteRemaining": 8,
+                                        "createRemaining": 3,
+                                        "voteLimit": 10,
+                                        "createLimit": 5
+                                      }
+                                    }
+                                    """)
+                    )
+            )
+    })
+    @GetMapping("/points/daily-limit")
+    public ResponseEntity<ApiResponse<DailyLimitResponse>> getDailyLimit() {
+        log.info("일일 제한 정보 조회 요청");
+
+        // 현재 사용자 ID 조회
+        String userId = securityUtils.getCurrentUserId();
+
+        // PointService를 통해 일일 제한 정보 조회
+        DailyLimitResponse response = pointService.getDailyLimit(userId);
+
+        // ApiResponse로 래핑하여 반환
+        return ResponseEntity.ok(ApiResponse.success(response));
     }
 
     /**

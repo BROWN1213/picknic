@@ -5,6 +5,7 @@ import { Button } from "./ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "./ui/dialog";
@@ -58,11 +59,9 @@ export function NotificationPopover({
         <DialogContent className="max-w-[90vw] w-full sm:max-w-md h-[500px] flex flex-col overflow-hidden bg-zinc-900 border-zinc-700 text-white gap-0 p-0 top-[15%] translate-y-0">
           <DialogHeader className="p-4 border-b border-zinc-700 shrink-0">
             <DialogTitle className="text-foreground text-left">알림</DialogTitle>
-            {unreadCount > 0 && (
-              <p className="text-xs text-lime-400 text-left">
-                {unreadCount}개의 새로운 알림
-              </p>
-            )}
+            <DialogDescription className="text-xs text-lime-400 text-left">
+              {unreadCount > 0 ? `${unreadCount}개의 새로운 알림` : '최근 알림 내역'}
+            </DialogDescription>
           </DialogHeader>
           
           <div className="overflow-y-auto flex-1 bg-zinc-900">

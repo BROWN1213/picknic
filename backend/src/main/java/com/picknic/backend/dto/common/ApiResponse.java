@@ -38,4 +38,23 @@ public class ApiResponse<T> {
     public static <T> ApiResponse<T> success(T data) {
         return new ApiResponse<>(true, data);
     }
+
+    /**
+     * 실패 응답 생성 헬퍼 메서드
+     *
+     * @param message 에러 메시지
+     * @return ApiResponse 객체
+     */
+    public static ApiResponse<ErrorData> error(String message) {
+        return new ApiResponse<>(false, new ErrorData(message));
+    }
+
+    /**
+     * 에러 데이터 클래스
+     */
+    @Getter
+    @AllArgsConstructor
+    public static class ErrorData {
+        private String message;
+    }
 }

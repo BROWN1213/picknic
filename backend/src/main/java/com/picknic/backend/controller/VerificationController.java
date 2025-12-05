@@ -10,7 +10,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.util.HashMap;
 import java.util.Map;
 @RestController
-@RequestMapping("/api/school-auth")
+@RequestMapping("/school-auth")
 @RequiredArgsConstructor
 
 public class VerificationController {

@@ -1,28 +1,55 @@
+import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Badge } from "./ui/badge";
 import { ScrollArea } from "./ui/scroll-area";
-import { Heart, MessageSquare, TrendingUp, Clock } from "lucide-react";
+import { Heart, MessageSquare, TrendingUp, Clock, Loader2 } from "lucide-react";
 import { type Vote } from "./VotingCard";
+import { voteService } from "../services/voteService";
+import { toast } from "sonner";
 
 interface MyVotesSheetProps {
   isOpen: boolean;
   onClose: () => void;
-  participatedVotes: Vote[];
-  createdVotes: Vote[];
   onVoteClick: (vote: Vote) => void;
 }
 
 export function MyVotesSheet({
   isOpen,
   onClose,
-  participatedVotes,
-  createdVotes,
   onVoteClick,
 }: MyVotesSheetProps) {
+  const [participatedVotes, setParticipatedVotes] = useState<Vote[]>([]);
+  const [createdVotes, setCreatedVotes] = useState<Vote[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    const loadVotes = async () => {
+      if (!isOpen) return;
+
+      setIsLoading(true);
+      try {
+        const [participated, created] = await Promise.all([
+          voteService.getParticipatedVotes(),
+          voteService.getMyVotes()
+        ]);
+
+        setParticipatedVotes(participated as unknown as Vote[]);
+        setCreatedVotes(created as unknown as Vote[]);
+      } catch (error) {
+        console.error('Failed to load my votes:', error);
+        toast.error('투표 목록을 불러오는데 실패했습니다.');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadVotes();
+  }, [isOpen]);
+
   const renderVoteItem = (vote: Vote, isCreated = false) => {
     const userOption = vote.options.find(opt => opt.id === vote.userVoted);
-    const percentage = userOption
+    const percentage = userOption && vote.totalVotes > 0
       ? Math.round((userOption.votes / vote.totalVotes) * 100)
       : 0;
 
@@ -63,14 +90,13 @@ export function MyVotesSheet({
           </div>
           {!isCreated && userOption && (
             <div className="flex items-center gap-1 text-lime-500">
-              <Heart className="w-3 h-3 fill-current" />
               <span>{userOption.text} • {percentage}%</span>
             </div>
           )}
           {vote.timeLeft && (
             <div className="flex items-center gap-1">
               <Clock className="w-3 h-3" />
-              <span>{vote.timeLeft} 남음</span>
+              <span>{vote.timeLeft}</span>
             </div>
           )}
         </div>
@@ -117,7 +143,11 @@ export function MyVotesSheet({
 
           <TabsContent value="participated" className="mt-4">
             <ScrollArea className="h-[50vh] pr-4">
-              {participatedVotes.length > 0 ? (
+              {isLoading ? (
+                <div className="flex items-center justify-center h-full py-16">
+                  <Loader2 className="w-8 h-8 text-lime-500 animate-spin" />
+                </div>
+              ) : participatedVotes.length > 0 ? (
                 <div className="space-y-3">
                   {participatedVotes.map((vote) => renderVoteItem(vote, false))}
                 </div>
@@ -135,7 +165,11 @@ export function MyVotesSheet({
 
           <TabsContent value="created" className="mt-4">
             <ScrollArea className="h-[50vh] pr-4">
-              {createdVotes.length > 0 ? (
+              {isLoading ? (
+                <div className="flex items-center justify-center h-full py-16">
+                  <Loader2 className="w-8 h-8 text-lime-500 animate-spin" />
+                </div>
+              ) : createdVotes.length > 0 ? (
                 <div className="space-y-3">
                   {createdVotes.map((vote) => renderVoteItem(vote, true))}
                 </div>

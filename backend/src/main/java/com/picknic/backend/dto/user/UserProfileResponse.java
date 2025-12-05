@@ -59,4 +59,9 @@ public class UserProfileResponse {
      * 인증된 학교명 (null이면 미인증)
      */
     private String verifiedSchool;
+
+    /**
+     * 시스템 계정 여부 (시스템 계정은 모든 투표 삭제 가능)
+     */
+    private Boolean isSystemAccount;
 }

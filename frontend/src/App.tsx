@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { useAuth } from "react-oidc-context";
 import { Button } from "./components/ui/button";
 import { Badge } from "./components/ui/badge";
 import {
@@ -11,34 +12,45 @@ import {
   Search,
   Menu,
   Vote,
-  ChevronLeft,
-  ChevronRight,
   Heart,
   Compass,
   Filter,
   X,
 } from "lucide-react";
 import { VotingCard, type Vote as VoteType } from "./components/VotingCard";
-import { StatsModal } from "./components/StatsModal";
+import { VoteAnalysisModal } from "./components/VoteAnalysisModal";
+import { LoginPage } from "./pages/LoginPage";
+import { SignupPage } from "./pages/SignupPage";
 import { CreateVoteModal, type CreateVoteData } from "./components/CreateVoteModal";
 import { RankingBoard } from "./components/RankingBoard";
 import { ProfileSection } from "./components/ProfileSection";
 import { RewardModal } from "./components/RewardModal";
-import { LoginScreen } from "./components/LoginScreen";
-import { StudentIdVerification } from "./components/StudentIdVerification";
 import { MyVotesSheet } from "./components/MyVotesSheet";
 import { NotificationPopover } from "./components/NotificationPopover";
 import { Toaster } from "./components/ui/sonner";
 import { toast } from "sonner";
+import { userService } from "./services/userService";
+import { voteService } from "./services/voteService";
+import { pointService } from "./services/pointService";
+import { apiClient } from "./lib/api";
+import type { UserProfile } from "./types/user";
+import type { DailyLimitResponse } from "./types/point";
+
+// Helper function removed as voteService now returns formatted data
 
 export default function App() {
-  const [authStep, setAuthStep] = useState<"login" | "school-verify" | "main">("login");
+  const auth = useAuth();
+  const [authStep, setAuthStep] = useState<"LOGIN" | "SIGNUP" | "APP">("LOGIN");
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [signupData, setSignupData] = useState<{ email: string, providerId: string } | null>(null);
+
   const [verifiedSchool, setVerifiedSchool] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("hot");
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [userPoints, setUserPoints] = useState(1750);
   const [userRank, setUserRank] = useState(6);
-  const [selectedVote, setSelectedVote] = useState<Vote | null>(null);
-  const [isStatsModalOpen, setIsStatsModalOpen] = useState(false);
+  const [selectedVote, setSelectedVote] = useState<VoteType | null>(null);
+  const [isAnalysisModalOpen, setIsAnalysisModalOpen] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isRewardModalOpen, setIsRewardModalOpen] = useState(false);
   const [isMyVotesSheetOpen, setIsMyVotesSheetOpen] = useState(false);
@@ -48,9 +60,23 @@ export default function App() {
   const [filterCategory, setFilterCategory] = useState<string>("all");
   const [filterSchool, setFilterSchool] = useState<boolean>(false);
   const [filterMyVotes, setFilterMyVotes] = useState<boolean>(false);
-  const [createdVotes, setCreatedVotes] = useState<Vote[]>([]);
+  const [filterParticipatedVotes, setFilterParticipatedVotes] = useState<boolean>(false);
+  const [allVotesData, setAllVotesData] = useState<VoteType[]>([]);
   const voteRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
-  
+  const [dailyLimit, setDailyLimit] = useState<DailyLimitResponse>({
+    voteRemaining: 10,
+    createRemaining: 5,
+    voteLimit: 10,
+    createLimit: 5
+  });
+
+  // API 클라이언트에 토큰 제공자 설정
+  useEffect(() => {
+    apiClient.setTokenProvider(() => {
+      return auth.user?.id_token || null;
+    });
+  }, [auth.user]);
+
   // 백엔드 Health Check (14분마다 실행)
   useEffect(() => {
     const healthCheck = async () => {
@@ -69,6 +95,37 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
+  // Load user profile and votes on mount
+  useEffect(() => {
+    loadInitialData();
+  }, [authStep]);
+
+  const loadInitialData = async () => {
+    if (authStep !== "APP") return;
+
+    try {
+      // Load user profile
+      const profile = await userService.getMyProfile();
+      setUserProfile(profile);
+      setUserPoints(profile.points);
+      setUserRank(profile.rank);
+      setVerifiedSchool(profile.verifiedSchool);
+
+      // Load votes
+      const votes = await voteService.getVotes('active');
+      setAllVotesData(votes as unknown as VoteType[]);
+
+      // Load daily limit
+      const limit = await pointService.getDailyLimit();
+      setDailyLimit(limit);
+
+      console.log('Initial data loaded successfully');
+    } catch (error) {
+      console.error('Failed to load initial data:', error);
+      toast.error('데이터를 불러오는데 실패했습니다.');
+    }
+  };
+
   // 알림 상태
   const [notifications, setNotifications] = useState([
     {
@@ -84,7 +141,7 @@ export default function App() {
   const handleNotificationClick = (voteId: string) => {
     // 전체 탭으로 이동
     setActiveTab("all");
-    
+
     // 약간의 지연 후 스크롤 (탭 전환 애니메이션 고려)
     setTimeout(() => {
       const element = voteRefs.current[voteId];
@@ -107,287 +164,147 @@ export default function App() {
     );
   };
 
-  const [hotVotes, setHotVotes] = useState<Vote[]>([
-    {
-      id: "pineapple-pizza",
-      type: "balance",
-      title: "파인애플 피자 호 VS 불호",
-      description: "영원한 논쟁! 당신의 선택은?",
-      options: [
-        { id: "pp-a", text: "호 (맛있다)", emoji: "🍍", votes: 1750 },
-        { id: "pp-b", text: "불호 (말도 안돼)", emoji: "🚫", votes: 5250 },
-      ],
-      totalVotes: 7000,
-      category: "음식",
-      isHot: true,
-      timeLeft: "5시간",
-      points: 1,
-    },
-    {
-      id: "uniform-freedom",
-      type: "balance",
-      title: "교복 자율화 찬성 vs 반대",
-      description: "교복 자율화에 대한 여러분의 의견은?",
-      options: [
-        { id: "uf-a", text: "찬성", emoji: "👕", votes: 3844 },
-        { id: "uf-b", text: "반대", emoji: "🎓", votes: 2356 },
-      ],
-      totalVotes: 6200,
-      category: "학교",
-      isHot: true,
-      timeLeft: "1일",
-      points: 2,
-    },
-    {
-      id: "1",
-      type: "balance",
-      title: "평생 떡볶이만 먹기 vs 평생 햄버거만 먹기",
-      options: [
-        { id: "1a", text: "떡볶이", emoji: "🌶️", votes: 3240 },
-        { id: "1b", text: "햄버거", emoji: "🍔", votes: 2880 },
-      ],
-      totalVotes: 6120,
-      category: "음식",
-      isHot: true,
-      timeLeft: "2시간",
-      points: 1,
-    },
-    {
-      id: "2",
-      type: "balance",
-      title: "오늘 어떤 신발 신을까?",
-      description: "친구들이 추천해주는 신발!",
-      options: [
-        {
-          id: "2a",
-          text: "화이트 스니커즈",
-          emoji: "👟",
-          image: "https://images.unsplash.com/photo-1578314921455-34dd4626b38d?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHx3aGl0ZSUyMHNuZWFrZXJzJTIwc2hvZXN8ZW58MXx8fHwxNzYyMjc1NTQwfDA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral",
-          votes: 1450,
-        },
-        {
-          id: "2b",
-          text: "블랙 스니커즈",
-          emoji: "🥾",
-          image: "https://images.unsplash.com/photo-1574020462714-5451391cc336?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxibGFjayUyMHNuZWFrZXJzJTIwc2hvZXN8ZW58MXx8fHwxNzYyMzE5MzExfDA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral",
-          votes: 1120,
-        },
-      ],
-      totalVotes: 2570,
-      category: "패션",
-      schoolName: "서울고등학교",
-      isHot: true,
-    },
-    {
-      id: "3",
-      type: "balance",
-      title: "이번 월즈 우승팀은?",
-      description: "2025 롤드컵 우승 예측! 맞히면 +15 포인트!",
-      options: [
-        {
-          id: "3a",
-          text: "KT Rolster",
-          emoji: "🏆",
-          votes: 2350,
-        },
-        {
-          id: "3b",
-          text: "T1",
-          emoji: "👑",
-          votes: 3780,
-        },
-      ],
-      totalVotes: 6130,
-      category: "게임",
-      isHot: true,
-      timeLeft: "3일",
-      points: 15,
-    },
-    {
-      id: "4",
-      type: "ox",
-      title: "나만 밥 먹을 때 영상 봄?",
-      options: [
-        { id: "4a", text: "O", votes: 4230 },
-        { id: "4b", text: "X", votes: 1890 },
-      ],
-      totalVotes: 6120,
-      category: "일상",
-    },
-    {
-      id: "5",
-      type: "balance",
-      title: "식칼 vs 몽둥이",
-      description: "좀비 아포칼립스 생존 무기",
-      options: [
-        { id: "5a", text: "식칼", emoji: "🔪", votes: 2940 },
-        { id: "5b", text: "몽둥이", emoji: "⚾", votes: 3180 },
-      ],
-      totalVotes: 6120,
-      category: "밈/유머",
-      isHot: true,
-    },
-  ]);
-
-  const [allVotes, setAllVotes] = useState<Vote[]>([
-    {
-      id: "uniform-vote",
-      type: "balance",
-      title: "겨울 교복보다 하복이 더 예쁘다",
-      description: "우리 학교 교복 중 더 예쁜 건?",
-      options: [
-        { id: "uv-a", text: "맞아, 하복이 더 예뻐", emoji: "👔", votes: 612 },
-        { id: "uv-b", text: "무슨 소리 겨울 교복이 더 예쁘다", emoji: "🧥", votes: 288 },
-      ],
-      totalVotes: 900,
-      category: "학교",
-      schoolName: "서울고등학교",
-      timeLeft: "6시간",
-      points: 1,
-    },
-    {
-      id: "env-cup",
-      type: "balance",
-      title: "물컵 VS 텀블러",
-      description: "환경을 생각한다면?",
-      options: [
-        { id: "ec-a", text: "물컵", emoji: "🥤", votes: 1240 },
-        { id: "ec-b", text: "텀블러", emoji: "🧋", votes: 3860 },
-      ],
-      totalVotes: 5100,
-      category: "환경",
-      timeLeft: "12시간",
-      points: 1,
-    },
-    {
-      id: "env-straw",
-      type: "balance",
-      title: "플라스틱 빨대 찬성 VS 반대",
-      description: "편의 vs 환경, 당신의 선택은?",
-      options: [
-        { id: "es-a", text: "찬성 (편하긴 해)", emoji: "🥤", votes: 1820 },
-        { id: "es-b", text: "반대 (환경이 중요)", emoji: "🌱", votes: 4580 },
-      ],
-      totalVotes: 6400,
-      category: "환경",
-      timeLeft: "8시간",
-      points: 1,
-    },
-  ]);
-
-  const [schoolVotes, setSchoolVotes] = useState<Vote[]>([
-    {
-      id: "7",
-      type: "multiple",
-      title: "점심 메뉴 투표",
-      options: [
-        { id: "7a", text: "김치찌개", emoji: "🍲", votes: 180 },
-        { id: "7b", text: "돈까스", emoji: "🍱", votes: 240 },
-        { id: "7c", text: "치킨", emoji: "🍗", votes: 320 },
-        { id: "7d", text: "피자", emoji: "🍕", votes: 160 },
-      ],
-      totalVotes: 900,
-      category: "음식",
-      schoolName: "서울고등학교",
-    },
-    {
-      id: "8",
-      type: "ox",
-      title: "오늘 체육시간 축구할래?",
-      options: [
-        { id: "8a", text: "O", votes: 420 },
-        { id: "8b", text: "X", votes: 280 },
-      ],
-      totalVotes: 700,
-      category: "학교",
-      schoolName: "서울고등학교",
-    },
-    {
-      id: "9",
-      type: "balance",
-      title: "야자 vs 아침자습",
-      options: [
-        { id: "9a", text: "야자", emoji: "🌙", votes: 380 },
-        { id: "9b", text: "아침자습", emoji: "☀️", votes: 520 },
-      ],
-      totalVotes: 900,
-      category: "학교",
-      schoolName: "서울고등학교",
-    },
-  ]);
-
-  const handleVote = (voteId: string, optionId: string) => {
-    setHotVotes((prevVotes) =>
-      prevVotes.map((vote) =>
-        vote.id === voteId
-          ? {
-              ...vote,
-              options: vote.options.map((opt) =>
-                opt.id === optionId
-                  ? { ...opt, votes: opt.votes + 1 }
-                  : opt
-              ),
-              totalVotes: vote.totalVotes + 1,
-              userVoted: optionId,
-            }
-          : vote
-      )
-    );
-
-    setSchoolVotes((prevVotes) =>
-      prevVotes.map((vote) =>
-        vote.id === voteId
-          ? {
-              ...vote,
-              options: vote.options.map((opt) =>
-                opt.id === optionId
-                  ? { ...opt, votes: opt.votes + 1 }
-                  : opt
-              ),
-              totalVotes: vote.totalVotes + 1,
-              userVoted: optionId,
-            }
-          : vote
-      )
-    );
-
-    setAllVotes((prevVotes) =>
-      prevVotes.map((vote) =>
-        vote.id === voteId
-          ? {
-              ...vote,
-              options: vote.options.map((opt) =>
-                opt.id === optionId
-                  ? { ...opt, votes: opt.votes + 1 }
-                  : opt
-              ),
-              totalVotes: vote.totalVotes + 1,
-              userVoted: optionId,
-            }
-          : vote
-      )
-    );
-
-    setUserPoints((prev) => prev + 1);
-    toast.success("투표 완료! +1 포인트");
+  const handleLoginSuccess = (user: any) => {
+    setCurrentUser(user);
+    setAuthStep("APP");
   };
 
-  const handleViewStats = (vote: Vote) => {
+  const handleNeedRegister = (email: string, providerId: string) => {
+    setSignupData({ email, providerId });
+    setAuthStep("SIGNUP");
+  };
+
+  const handleSignupSuccess = (user: any) => {
+    setAuthStep("APP");
+    setCurrentUser(user);
+    setSignupData(null);
+    toast.success("프로필 완성이 완료되었습니다!");
+  };
+
+  if (authStep === "LOGIN") {
+    return (
+      <>
+        <Toaster position="top-center" />
+        <LoginPage onLoginSuccess={handleLoginSuccess} onNeedRegister={handleNeedRegister} />
+      </>
+    );
+  }
+
+  if (authStep === "SIGNUP" && signupData) {
+    return (
+      <>
+        <Toaster position="top-center" />
+        <SignupPage
+          email={signupData.email}
+          providerId={signupData.providerId}
+          onSignupSuccess={handleSignupSuccess}
+        />
+      </>
+    );
+  }
+
+  // Computed values based on loaded data
+  const hotVotes = allVotesData.filter(vote => vote.totalVotes > 1000 || vote.isHot).slice(0, 10);
+  const schoolVotes = allVotesData.filter(vote => vote.schoolName);
+  const allVotes = allVotesData;
+
+  const handleVote = async (voteId: string, optionId: string) => {
+    try {
+      const oldRemaining = dailyLimit.voteRemaining;
+
+      // Call API to cast vote
+      const updatedVote = await voteService.castVote(Number(voteId), { optionId });
+
+      // Update local state
+      setAllVotesData(prevVotes =>
+        prevVotes.map(vote =>
+          vote.id === voteId ? (updatedVote as unknown as VoteType) : vote
+        )
+      );
+
+      // Refresh user profile and daily limit
+      const [profile, limit] = await Promise.all([
+        userService.getMyProfile(),
+        pointService.getDailyLimit()
+      ]);
+
+      setUserPoints(profile.points);
+      setDailyLimit(limit);
+
+      // Show appropriate toast based on remaining count
+      if (oldRemaining > 0) {
+        toast.success(`투표 완료! +1 포인트 (남은 횟수: ${limit.voteRemaining}/${limit.voteLimit})`);
+      } else {
+        toast.info(`투표 완료! (오늘의 포인트 획득 한도 초과)`);
+      }
+    } catch (error) {
+      console.error('Failed to cast vote:', error);
+      toast.error('투표에 실패했습니다. 다시 시도해주세요.');
+    }
+  };
+
+  const handleViewStats = (vote: VoteType) => {
     setSelectedVote(vote);
-    setIsStatsModalOpen(true);
+    setIsAnalysisModalOpen(true);
   };
 
-  const handleCreateVote = (voteData: CreateVoteData) => {
-    const newVote: Vote = {
-      ...voteData,
-      id: Date.now().toString(),
-      totalVotes: 0,
-      schoolName: "서울고등학교",
-    };
+  const handleCreateVote = async (voteData: CreateVoteData) => {
+    try {
+      const oldRemaining = dailyLimit.createRemaining;
 
-    setSchoolVotes([newVote, ...schoolVotes]);
-    setCreatedVotes([newVote, ...createdVotes]);
-    setUserPoints((prev) => prev + 2);
+      // Call API to create vote
+      const newVote = await voteService.createVote({
+        type: voteData.type as 'balance' | 'multiple' | 'ox',
+        title: voteData.title,
+        description: voteData.description,
+        imageUrl: voteData.imageUrl, // S3 이미지 URL 추가
+        options: voteData.options.map(opt => ({
+          text: opt.text || '',
+          emoji: opt.emoji,
+          image: opt.image
+        })),
+        category: voteData.category,
+      });
+
+      // Update local state
+      setAllVotesData(prev => [(newVote as unknown as VoteType), ...prev]);
+
+      // Refresh user profile and daily limit
+      const [profile, limit] = await Promise.all([
+        userService.getMyProfile(),
+        pointService.getDailyLimit()
+      ]);
+
+      setUserPoints(profile.points);
+      setDailyLimit(limit);
+
+      // Show appropriate toast based on remaining count
+      if (oldRemaining > 0) {
+        toast.success(`투표 생성 완료! +10 포인트 (남은 횟수: ${limit.createRemaining}/${limit.createLimit})`);
+      } else {
+        toast.info(`투표 생성 완료! (오늘의 포인트 획득 한도를 초과했습니다)`);
+      }
+
+      // Close modal
+      setIsCreateModalOpen(false);
+    } catch (error) {
+      console.error('Failed to create vote:', error);
+      toast.error('투표 생성에 실패했습니다. 다시 시도해주세요.');
+    }
+  };
+
+  const handleDeleteVote = async (voteId: string) => {
+    try {
+      await voteService.deleteVote(Number(voteId));
+
+      // Remove from local state
+      setAllVotesData(prev => prev.filter(vote => vote.id !== voteId));
+
+      toast.success("투표가 삭제되었습니다.");
+    } catch (error) {
+      console.error('Failed to delete vote:', error);
+      toast.error('투표 삭제에 실패했습니다.');
+    }
   };
 
   const navItems = [
@@ -397,76 +314,30 @@ export default function App() {
     { id: "profile", icon: User, label: "프로필" },
   ];
 
-  const handleLogin = () => {
-    setAuthStep("main");
-    toast.success("로그인 성공! 환영합니다 🎉");
-  };
-
   const handleLogout = () => {
-    setAuthStep("login");
+    setAuthStep("LOGIN");
     setVerifiedSchool(null);
     setActiveTab("hot");
+    setCurrentUser(null);
+
+    // LOCAL 사용자용
+    localStorage.removeItem("token");
+
+    // OAuth 사용자용
+    if (auth.isAuthenticated) {
+      auth.removeUser();
+      auth.signoutRedirect();
+    }
+
     toast.info("로그아웃 되었습니다");
   };
 
-  const handleEmailSignup = () => {
-    setAuthStep("school-verify");
-  };
 
-  const handleSocialLogin = () => {
-    // 소셜 로그인 후 학생증 인증으로 이동
-    setAuthStep("school-verify");
-    setVerifiedSchool(null);
-    toast.success("로그인 되었습니다!");
-  };
-
-  const handleSchoolVerificationComplete = (schoolName?: string) => {
-    setAuthStep("main");
-    if (schoolName) {
-      setVerifiedSchool(schoolName);
-      setUserPoints(prev => prev + 50); // 보너스 포인트
-      toast.success(`${schoolName} 인증이 완료되었습니다! +50P 🎉`);
-    } else {
-      toast.success("Picknic에 오신 것을 환영합니다! 🎉");
-    }
-  };
-
-  const handleSchoolVerificationSkip = () => {
-    setAuthStep("main");
-    setVerifiedSchool(null);
-    toast.success("Picknic에 오신 것을 환영합니다! 🎉");
-  };
-
-  // Show login screen
-  if (authStep === "login") {
-    return (
-      <>
-        <Toaster position="top-center" />
-        <LoginScreen 
-          onEmailSignup={handleEmailSignup}
-          onSocialLogin={handleSocialLogin}
-        />
-      </>
-    );
-  }
-
-  // Show school verification screen
-  if (authStep === "school-verify") {
-    return (
-      <>
-        <Toaster position="top-center" />
-        <StudentIdVerification 
-          onComplete={handleSchoolVerificationComplete}
-          onBack={() => setAuthStep("login")}
-        />
-      </>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-background text-foreground">
       <Toaster position="top-center" />
-      
+
       {/* Fixed Hamburger Menu & Logo - Desktop (Always in same position) */}
       <div className="hidden lg:block fixed top-6 left-6 z-50">
         <div className="flex items-center gap-3">
@@ -477,7 +348,7 @@ export default function App() {
           >
             <Menu className="w-5 h-5" />
           </button>
-          
+
           {/* App Logo */}
           <div className="flex items-center gap-2">
             <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-lime-500 to-emerald-500 flex items-center justify-center flex-shrink-0">
@@ -492,15 +363,14 @@ export default function App() {
           </div>
         </div>
       </div>
-      
+
       {/* Spotify-style Layout */}
       <div className="flex h-screen overflow-hidden">
         {/* Sidebar - Desktop */}
-        <aside className={`hidden lg:flex flex-col transition-all duration-300 ${
-          isSidebarCollapsed 
-            ? 'w-20 bg-transparent' 
-            : 'w-64 bg-black border-r border-white/10'
-        } ${isSidebarCollapsed ? 'p-4 pt-28' : 'p-6 pt-28'}`}>
+        <aside className={`hidden lg:flex flex-col transition-all duration-300 ${isSidebarCollapsed
+          ? 'w-20 bg-transparent'
+          : 'w-64 bg-black border-r border-white/10'
+          } ${isSidebarCollapsed ? 'p-4 pt-28' : 'p-6 pt-28'}`}>
 
           {/* Navigation */}
           <nav className="space-y-2 mb-8">
@@ -508,15 +378,14 @@ export default function App() {
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id)}
-                className={`w-full flex ${isSidebarCollapsed ? 'flex-col items-center gap-1 py-3 px-2' : 'flex-row items-center gap-4 py-3 px-4'} rounded-lg transition-all ${
-                  activeTab === item.id
-                    ? isSidebarCollapsed
-                      ? "bg-background text-lime-500"
-                      : "bg-gradient-to-r from-lime-500/20 to-emerald-500/20 text-lime-500 border border-lime-500/30"
-                    : isSidebarCollapsed
-                      ? "text-muted-foreground hover:text-white hover:bg-background"
-                      : "text-muted-foreground hover:text-white hover:bg-white/5"
-                }`}
+                className={`w-full flex ${isSidebarCollapsed ? 'flex-col items-center gap-1 py-3 px-2' : 'flex-row items-center gap-4 py-3 px-4'} rounded-lg transition-all ${activeTab === item.id
+                  ? isSidebarCollapsed
+                    ? "bg-background text-lime-500"
+                    : "bg-gradient-to-r from-lime-500/20 to-emerald-500/20 text-lime-500 border border-lime-500/30"
+                  : isSidebarCollapsed
+                    ? "text-muted-foreground hover:text-white hover:bg-background"
+                    : "text-muted-foreground hover:text-white hover:bg-white/5"
+                  }`}
               >
                 <item.icon className="w-5 h-5" />
                 {isSidebarCollapsed ? (
@@ -526,7 +395,7 @@ export default function App() {
                 )}
               </button>
             ))}
-            
+
             {/* Create Vote Button in Sidebar */}
             <button
               onClick={() => setIsCreateModalOpen(true)}
@@ -586,9 +455,8 @@ export default function App() {
                 </div>
 
                 {/* Search - Desktop (with proper spacing for logo) */}
-                <div className={`hidden md:flex items-center gap-2 bg-white/10 rounded-full px-4 py-2 w-80 transition-all duration-300 ${
-                  isSidebarCollapsed ? 'ml-32' : ''
-                }`}>
+                <div className={`hidden md:flex items-center gap-2 bg-white/10 rounded-full px-4 py-2 w-80 transition-all duration-300 ${isSidebarCollapsed ? 'ml-32' : ''
+                  }`}>
                   <Search className="w-4 h-4 text-muted-foreground" />
                   <input
                     type="text"
@@ -609,6 +477,36 @@ export default function App() {
                   <Search className="w-5 h-5" />
                 </Button>
 
+                {/* Daily Limit Badges */}
+                <div className="hidden lg:flex items-center gap-2">
+                  <Badge
+                    variant="outline"
+                    className={`gap-1 border ${
+                      dailyLimit.voteRemaining === 0
+                        ? 'border-red-500/50 bg-red-500/10 text-red-400'
+                        : dailyLimit.voteRemaining <= 3
+                        ? 'border-orange-500/50 bg-orange-500/10 text-orange-400'
+                        : 'border-lime-500/50 bg-lime-500/10 text-lime-400'
+                    }`}
+                  >
+                    <Zap className="w-3 h-3" />
+                    <span className="text-xs">투표 {dailyLimit.voteRemaining}/{dailyLimit.voteLimit}</span>
+                  </Badge>
+                  <Badge
+                    variant="outline"
+                    className={`gap-1 border ${
+                      dailyLimit.createRemaining === 0
+                        ? 'border-red-500/50 bg-red-500/10 text-red-400'
+                        : dailyLimit.createRemaining <= 2
+                        ? 'border-orange-500/50 bg-orange-500/10 text-orange-400'
+                        : 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400'
+                    }`}
+                  >
+                    <Plus className="w-3 h-3" />
+                    <span className="text-xs">생성 {dailyLimit.createRemaining}/{dailyLimit.createLimit}</span>
+                  </Badge>
+                </div>
+
                 {/* Notification Popover */}
                 <NotificationPopover
                   notifications={notifications}
@@ -623,9 +521,6 @@ export default function App() {
                   onClick={() => setIsMyVotesSheetOpen(true)}
                 >
                   <Heart className="w-5 h-5" />
-                  <Badge className="absolute -top-1 -right-1 w-5 h-5 flex items-center justify-center p-0 bg-gradient-to-r from-pink-500 to-orange-500 text-white text-xs border-0">
-                    {[...hotVotes, ...schoolVotes, ...allVotes].filter(v => v.userVoted).length}
-                  </Badge>
                 </Button>
 
                 <Button
@@ -653,16 +548,17 @@ export default function App() {
                   </div>
 
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    {[...hotVotes, ...schoolVotes]
-                      .filter((vote) => vote.isHot)
-                      .map((vote) => (
-                        <VotingCard
-                          key={vote.id}
-                          vote={vote}
-                          onVote={handleVote}
-                          onViewStats={handleViewStats}
-                        />
-                      ))}
+                    {hotVotes.map((vote) => (
+                      <VotingCard
+                        key={vote.id}
+                        vote={vote}
+                        onVote={handleVote}
+                        onViewStats={handleViewStats}
+                        onDelete={handleDeleteVote}
+                        currentUserId={userProfile?.userId}
+                        isSystemAccount={userProfile?.isSystemAccount}
+                      />
+                    ))}
                   </div>
                 </div>
               )}
@@ -680,28 +576,36 @@ export default function App() {
                   {/* Filters */}
                   <div className="space-y-4">
                     {/* School Toggle and My Votes */}
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <button
                         onClick={() => setFilterSchool(!filterSchool)}
-                        className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-all ${
-                          filterSchool
-                            ? "border-lime-500 bg-lime-500/10 text-lime-500"
-                            : "border-white/10 bg-white/5 text-muted-foreground hover:border-lime-500/50"
-                        }`}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-all ${filterSchool
+                          ? "border-lime-500 bg-lime-500/10 text-lime-500"
+                          : "border-white/10 bg-white/5 text-muted-foreground hover:border-lime-500/50"
+                          }`}
                       >
                         <School className="w-4 h-4" />
                         <span className="text-sm">우리학교만 보기</span>
                       </button>
                       <button
                         onClick={() => setFilterMyVotes(!filterMyVotes)}
-                        className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-all ${
-                          filterMyVotes
-                            ? "border-lime-500 bg-lime-500/10 text-lime-500"
-                            : "border-white/10 bg-white/5 text-muted-foreground hover:border-lime-500/50"
-                        }`}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-all ${filterMyVotes
+                          ? "border-lime-500 bg-lime-500/10 text-lime-500"
+                          : "border-white/10 bg-white/5 text-muted-foreground hover:border-lime-500/50"
+                          }`}
                       >
                         <User className="w-4 h-4" />
                         <span className="text-sm">내가 만든 투표</span>
+                      </button>
+                      <button
+                        onClick={() => setFilterParticipatedVotes(!filterParticipatedVotes)}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-all ${filterParticipatedVotes
+                          ? "border-lime-500 bg-lime-500/10 text-lime-500"
+                          : "border-white/10 bg-white/5 text-muted-foreground hover:border-lime-500/50"
+                          }`}
+                      >
+                        <Zap className="w-4 h-4" />
+                        <span className="text-sm">참여한 투표 숨기기</span>
                       </button>
                     </div>
 
@@ -714,44 +618,40 @@ export default function App() {
                       <div className="flex flex-wrap gap-2">
                         <button
                           onClick={() => setFilterType("all")}
-                          className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-all ${
-                            filterType === "all"
-                              ? "border-lime-500 bg-lime-500/10 text-lime-500"
-                              : "border-white/10 bg-white/5 text-white hover:border-lime-500/50"
-                          }`}
+                          className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-all ${filterType === "all"
+                            ? "border-lime-500 bg-lime-500/10 text-lime-500"
+                            : "border-white/10 bg-white/5 text-white hover:border-lime-500/50"
+                            }`}
                         >
                           <Compass className="w-4 h-4" />
                           <span className="text-sm">전체</span>
                         </button>
                         <button
                           onClick={() => setFilterType("balance")}
-                          className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-all ${
-                            filterType === "balance"
-                              ? "border-lime-500 bg-lime-500/10 text-lime-500"
-                              : "border-white/10 bg-white/5 text-white hover:border-lime-500/50"
-                          }`}
+                          className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-all ${filterType === "balance"
+                            ? "border-lime-500 bg-lime-500/10 text-lime-500"
+                            : "border-white/10 bg-white/5 text-white hover:border-lime-500/50"
+                            }`}
                         >
                           <span className="text-lg">⚖️</span>
                           <span className="text-sm">밸런스 게임</span>
                         </button>
                         <button
                           onClick={() => setFilterType("multiple")}
-                          className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-all ${
-                            filterType === "multiple"
-                              ? "border-lime-500 bg-lime-500/10 text-lime-500"
-                              : "border-white/10 bg-white/5 text-white hover:border-lime-500/50"
-                          }`}
+                          className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-all ${filterType === "multiple"
+                            ? "border-lime-500 bg-lime-500/10 text-lime-500"
+                            : "border-white/10 bg-white/5 text-white hover:border-lime-500/50"
+                            }`}
                         >
                           <span className="text-lg">📝</span>
                           <span className="text-sm">객관식</span>
                         </button>
                         <button
                           onClick={() => setFilterType("ox")}
-                          className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-all ${
-                            filterType === "ox"
-                              ? "border-lime-500 bg-lime-500/10 text-lime-500"
-                              : "border-white/10 bg-white/5 text-white hover:border-lime-500/50"
-                          }`}
+                          className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-all ${filterType === "ox"
+                            ? "border-lime-500 bg-lime-500/10 text-lime-500"
+                            : "border-white/10 bg-white/5 text-white hover:border-lime-500/50"
+                            }`}
                         >
                           <span className="text-lg">⭕</span>
                           <span className="text-sm">O/X</span>
@@ -768,132 +668,120 @@ export default function App() {
                       <div className="flex flex-wrap gap-2">
                         <button
                           onClick={() => setFilterCategory("all")}
-                          className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${
-                            filterCategory === "all"
-                              ? "border-lime-500 bg-lime-500/10 text-lime-500"
-                              : "border-white/10 bg-white/5 text-white hover:border-lime-500/50"
-                          }`}
+                          className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${filterCategory === "all"
+                            ? "border-lime-500 bg-lime-500/10 text-lime-500"
+                            : "border-white/10 bg-white/5 text-white hover:border-lime-500/50"
+                            }`}
                         >
                           <span className="text-base">🌟</span>
                           <span className="text-sm">전체</span>
                         </button>
                         <button
                           onClick={() => setFilterCategory("일상")}
-                          className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${
-                            filterCategory === "일상"
-                              ? "border-lime-500 bg-lime-500/10 text-lime-500"
-                              : "border-white/10 bg-white/5 text-white hover:border-lime-500/50"
-                          }`}
+                          className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${filterCategory === "일상"
+                            ? "border-lime-500 bg-lime-500/10 text-lime-500"
+                            : "border-white/10 bg-white/5 text-white hover:border-lime-500/50"
+                            }`}
                         >
                           <span className="text-base">☀️</span>
                           <span className="text-sm">일상</span>
                         </button>
                         <button
                           onClick={() => setFilterCategory("음식")}
-                          className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${
-                            filterCategory === "음식"
-                              ? "border-lime-500 bg-lime-500/10 text-lime-500"
-                              : "border-white/10 bg-white/5 text-white hover:border-lime-500/50"
-                          }`}
+                          className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${filterCategory === "음식"
+                            ? "border-lime-500 bg-lime-500/10 text-lime-500"
+                            : "border-white/10 bg-white/5 text-white hover:border-lime-500/50"
+                            }`}
                         >
                           <span className="text-base">🍕</span>
                           <span className="text-sm">음식</span>
                         </button>
                         <button
                           onClick={() => setFilterCategory("패션")}
-                          className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${
-                            filterCategory === "패션"
-                              ? "border-lime-500 bg-lime-500/10 text-lime-500"
-                              : "border-white/10 bg-white/5 text-white hover:border-lime-500/50"
-                          }`}
+                          className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${filterCategory === "패션"
+                            ? "border-lime-500 bg-lime-500/10 text-lime-500"
+                            : "border-white/10 bg-white/5 text-white hover:border-lime-500/50"
+                            }`}
                         >
                           <span className="text-base">👕</span>
                           <span className="text-sm">패션</span>
                         </button>
                         <button
                           onClick={() => setFilterCategory("게임")}
-                          className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${
-                            filterCategory === "게임"
-                              ? "border-lime-500 bg-lime-500/10 text-lime-500"
-                              : "border-white/10 bg-white/5 text-white hover:border-lime-500/50"
-                          }`}
+                          className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${filterCategory === "게임"
+                            ? "border-lime-500 bg-lime-500/10 text-lime-500"
+                            : "border-white/10 bg-white/5 text-white hover:border-lime-500/50"
+                            }`}
                         >
                           <span className="text-base">🎮</span>
                           <span className="text-sm">게임</span>
                         </button>
                         <button
                           onClick={() => setFilterCategory("학교")}
-                          className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${
-                            filterCategory === "학교"
-                              ? "border-lime-500 bg-lime-500/10 text-lime-500"
-                              : "border-white/10 bg-white/5 text-white hover:border-lime-500/50"
-                          }`}
+                          className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${filterCategory === "학교"
+                            ? "border-lime-500 bg-lime-500/10 text-lime-500"
+                            : "border-white/10 bg-white/5 text-white hover:border-lime-500/50"
+                            }`}
                         >
                           <span className="text-base">🏫</span>
                           <span className="text-sm">학교</span>
                         </button>
                         <button
                           onClick={() => setFilterCategory("아이돌")}
-                          className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${
-                            filterCategory === "아이돌"
-                              ? "border-lime-500 bg-lime-500/10 text-lime-500"
-                              : "border-white/10 bg-white/5 text-white hover:border-lime-500/50"
-                          }`}
+                          className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${filterCategory === "아이돌"
+                            ? "border-lime-500 bg-lime-500/10 text-lime-500"
+                            : "border-white/10 bg-white/5 text-white hover:border-lime-500/50"
+                            }`}
                         >
                           <span className="text-base">⭐</span>
                           <span className="text-sm">아이돌</span>
                         </button>
                         <button
                           onClick={() => setFilterCategory("영화/드라마")}
-                          className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${
-                            filterCategory === "영화/드라마"
-                              ? "border-lime-500 bg-lime-500/10 text-lime-500"
-                              : "border-white/10 bg-white/5 text-white hover:border-lime-500/50"
-                          }`}
+                          className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${filterCategory === "영화/드라마"
+                            ? "border-lime-500 bg-lime-500/10 text-lime-500"
+                            : "border-white/10 bg-white/5 text-white hover:border-lime-500/50"
+                            }`}
                         >
                           <span className="text-base">🎬</span>
                           <span className="text-sm">영화/드라마</span>
                         </button>
                         <button
                           onClick={() => setFilterCategory("운동")}
-                          className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${
-                            filterCategory === "운동"
-                              ? "border-lime-500 bg-lime-500/10 text-lime-500"
-                              : "border-white/10 bg-white/5 text-white hover:border-lime-500/50"
-                          }`}
+                          className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${filterCategory === "운동"
+                            ? "border-lime-500 bg-lime-500/10 text-lime-500"
+                            : "border-white/10 bg-white/5 text-white hover:border-lime-500/50"
+                            }`}
                         >
                           <span className="text-base">⚽</span>
                           <span className="text-sm">운동</span>
                         </button>
                         <button
                           onClick={() => setFilterCategory("취미")}
-                          className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${
-                            filterCategory === "취미"
-                              ? "border-lime-500 bg-lime-500/10 text-lime-500"
-                              : "border-white/10 bg-white/5 text-white hover:border-lime-500/50"
-                          }`}
+                          className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${filterCategory === "취미"
+                            ? "border-lime-500 bg-lime-500/10 text-lime-500"
+                            : "border-white/10 bg-white/5 text-white hover:border-lime-500/50"
+                            }`}
                         >
                           <span className="text-base">🎨</span>
                           <span className="text-sm">취미</span>
                         </button>
                         <button
                           onClick={() => setFilterCategory("밈/유머")}
-                          className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${
-                            filterCategory === "밈/유머"
-                              ? "border-lime-500 bg-lime-500/10 text-lime-500"
-                              : "border-white/10 bg-white/5 text-white hover:border-lime-500/50"
-                          }`}
+                          className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${filterCategory === "밈/유머"
+                            ? "border-lime-500 bg-lime-500/10 text-lime-500"
+                            : "border-white/10 bg-white/5 text-white hover:border-lime-500/50"
+                            }`}
                         >
                           <span className="text-base">😂</span>
                           <span className="text-sm">밈/유머</span>
                         </button>
                         <button
                           onClick={() => setFilterCategory("환경")}
-                          className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${
-                            filterCategory === "환경"
-                              ? "border-lime-500 bg-lime-500/10 text-lime-500"
-                              : "border-white/10 bg-white/5 text-white hover:border-lime-500/50"
-                          }`}
+                          className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${filterCategory === "환경"
+                            ? "border-lime-500 bg-lime-500/10 text-lime-500"
+                            : "border-white/10 bg-white/5 text-white hover:border-lime-500/50"
+                            }`}
                         >
                           <span className="text-base">🌱</span>
                           <span className="text-sm">환경</span>
@@ -902,13 +790,14 @@ export default function App() {
                     </div>
 
                     {/* Reset Filters */}
-                    {(filterType !== "all" || filterCategory !== "all" || filterSchool || filterMyVotes) && (
+                    {(filterType !== "all" || filterCategory !== "all" || filterSchool || filterMyVotes || filterParticipatedVotes) && (
                       <button
                         onClick={() => {
                           setFilterType("all");
                           setFilterCategory("all");
                           setFilterSchool(false);
                           setFilterMyVotes(false);
+                          setFilterParticipatedVotes(false);
                         }}
                         className="text-sm text-lime-500 hover:text-lime-400 transition-colors flex items-center gap-1"
                       >
@@ -919,16 +808,17 @@ export default function App() {
                   </div>
 
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    {[...hotVotes, ...schoolVotes, ...allVotes]
+                    {allVotes
                       .filter((vote) => {
                         const typeMatch = filterType === "all" || vote.type === filterType;
                         const categoryMatch = filterCategory === "all" || vote.category === filterCategory;
-                        const schoolMatch = !filterSchool || vote.schoolName;
-                        const myVoteMatch = !filterMyVotes || createdVotes.some(cv => cv.id === vote.id);
-                        return typeMatch && categoryMatch && schoolMatch && myVoteMatch;
+                        const schoolMatch = !filterSchool || (vote.schoolName && userProfile?.verifiedSchool && vote.schoolName === userProfile.verifiedSchool);
+                        const myVoteMatch = !filterMyVotes || (userProfile?.userId && vote.creatorId === userProfile.userId);
+                        const participatedMatch = !filterParticipatedVotes || vote.userVoted === null;
+                        return typeMatch && categoryMatch && schoolMatch && myVoteMatch && participatedMatch;
                       })
                       .map((vote) => (
-                        <div 
+                        <div
                           key={vote.id}
                           ref={(el) => {
                             voteRefs.current[vote.id] = el;
@@ -939,6 +829,9 @@ export default function App() {
                             vote={vote}
                             onVote={handleVote}
                             onViewStats={handleViewStats}
+                            onDelete={handleDeleteVote}
+                            currentUserId={userProfile?.userId}
+                            isSystemAccount={userProfile?.isSystemAccount}
                           />
                         </div>
                       ))}
@@ -957,7 +850,12 @@ export default function App() {
                       최고의 투표러들을 만나보세요
                     </p>
                   </div>
-                  <RankingBoard userPoints={userPoints} userRank={userRank} />
+                  <RankingBoard
+                    userPoints={userPoints}
+                    userRank={userRank}
+                    level={userProfile?.level}
+                    levelIcon={userProfile?.levelIcon}
+                  />
                 </div>
               )}
 
@@ -974,8 +872,12 @@ export default function App() {
                     userPoints={userPoints}
                     userRank={userRank}
                     verifiedSchool={verifiedSchool}
+                    nickname={userProfile?.username}
+                    level={userProfile?.level}
+                    levelIcon={userProfile?.levelIcon}
                     onRewardClick={() => setIsRewardModalOpen(true)}
                     onLogout={handleLogout}
+                    dailyLimit={dailyLimit}
                   />
                 </div>
               )}
@@ -992,6 +894,12 @@ export default function App() {
         </button>
       </div>
 
+      {/* Vote Analysis Modal */}
+      <VoteAnalysisModal
+        isOpen={isAnalysisModalOpen}
+        onClose={() => setIsAnalysisModalOpen(false)}
+        vote={selectedVote}
+      />
       {/* Bottom Navigation Bar - Mobile */}
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-[#0f1419] border-t border-white/10 z-50">
         <div className="grid grid-cols-5 items-center h-20">
@@ -999,11 +907,10 @@ export default function App() {
             <button
               key={item.id}
               onClick={() => setActiveTab(item.id)}
-              className={`flex flex-col items-center justify-center gap-1 h-full transition-all ${
-                activeTab === item.id
-                  ? "text-lime-500"
-                  : "text-muted-foreground"
-              }`}
+              className={`flex flex-col items-center justify-center gap-1 h-full transition-all ${activeTab === item.id
+                ? "text-lime-500"
+                : "text-muted-foreground"
+                }`}
             >
               <item.icon className={`w-6 h-6 ${activeTab === item.id ? "scale-110" : ""} transition-transform`} />
               <span className="text-xs">{item.label}</span>
@@ -1022,11 +929,10 @@ export default function App() {
             <button
               key={item.id}
               onClick={() => setActiveTab(item.id)}
-              className={`flex flex-col items-center justify-center gap-1 h-full transition-all ${
-                activeTab === item.id
-                  ? "text-lime-500"
-                  : "text-muted-foreground"
-              }`}
+              className={`flex flex-col items-center justify-center gap-1 h-full transition-all ${activeTab === item.id
+                ? "text-lime-500"
+                : "text-muted-foreground"
+                }`}
             >
               <item.icon className={`w-6 h-6 ${activeTab === item.id ? "scale-110" : ""} transition-transform`} />
               <span className="text-xs">{item.label}</span>
@@ -1036,11 +942,7 @@ export default function App() {
       </nav>
 
       {/* Modals */}
-      <StatsModal
-        vote={selectedVote}
-        isOpen={isStatsModalOpen}
-        onClose={() => setIsStatsModalOpen(false)}
-      />
+
 
       <CreateVoteModal
         isOpen={isCreateModalOpen}
@@ -1057,58 +959,58 @@ export default function App() {
       <MyVotesSheet
         isOpen={isMyVotesSheetOpen}
         onClose={() => setIsMyVotesSheetOpen(false)}
-        participatedVotes={[...hotVotes, ...schoolVotes, ...allVotes].filter(v => v.userVoted)}
-        createdVotes={createdVotes}
         onVoteClick={handleViewStats}
       />
 
       {/* Mobile Search Sheet */}
-      {isSearchOpen && (
-        <div className="fixed inset-0 z-50 bg-black/80 lg:hidden">
-          <div className="fixed inset-x-0 top-0 h-full bg-background border-t border-white/10 animate-in slide-in-from-bottom duration-300">
-            <div className="flex flex-col h-full">
-              {/* Search Header */}
-              <div className="flex items-center gap-3 px-4 py-4 border-b border-white/10">
-                <button
-                  onClick={() => setIsSearchOpen(false)}
-                  className="text-white hover:bg-white/10 p-2 rounded-lg"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-                <div className="flex-1 flex items-center gap-2 bg-white/10 rounded-full px-4 py-2">
-                  <Search className="w-4 h-4 text-muted-foreground" />
-                  <input
-                    type="text"
-                    placeholder="투표 검색..."
-                    className="bg-transparent border-0 outline-none text-sm text-white placeholder:text-muted-foreground w-full"
-                    autoFocus
-                  />
+      {
+        isSearchOpen && (
+          <div className="fixed inset-0 z-50 bg-black/80 lg:hidden">
+            <div className="fixed inset-x-0 top-0 h-full bg-background border-t border-white/10 animate-in slide-in-from-bottom duration-300">
+              <div className="flex flex-col h-full">
+                {/* Search Header */}
+                <div className="flex items-center gap-3 px-4 py-4 border-b border-white/10">
+                  <button
+                    onClick={() => setIsSearchOpen(false)}
+                    className="text-white hover:bg-white/10 p-2 rounded-lg"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                  <div className="flex-1 flex items-center gap-2 bg-white/10 rounded-full px-4 py-2">
+                    <Search className="w-4 h-4 text-muted-foreground" />
+                    <input
+                      type="text"
+                      placeholder="투표 검색..."
+                      className="bg-transparent border-0 outline-none text-sm text-white placeholder:text-muted-foreground w-full"
+                      autoFocus
+                    />
+                  </div>
                 </div>
-              </div>
 
-              {/* Search Results */}
-              <div className="flex-1 overflow-y-auto p-4">
-                <div className="space-y-3">
-                  <p className="text-sm text-muted-foreground">최근 검색</p>
-                  <div className="space-y-2">
-                    {['밸런스 게임', '학교 투표', 'MBTI'].map((term) => (
-                      <button
-                        key={term}
-                        className="w-full text-left px-4 py-3 rounded-lg bg-white/5 hover:bg-white/10 text-white transition-colors"
-                      >
-                        <div className="flex items-center gap-3">
-                          <Search className="w-4 h-4 text-muted-foreground" />
-                          <span>{term}</span>
-                        </div>
-                      </button>
-                    ))}
+                {/* Search Results */}
+                <div className="flex-1 overflow-y-auto p-4">
+                  <div className="space-y-3">
+                    <p className="text-sm text-muted-foreground">최근 검색</p>
+                    <div className="space-y-2">
+                      {['밸런스 게임', '학교 투표', 'MBTI'].map((term) => (
+                        <button
+                          key={term}
+                          className="w-full text-left px-4 py-3 rounded-lg bg-white/5 hover:bg-white/10 text-white transition-colors"
+                        >
+                          <div className="flex items-center gap-3">
+                            <Search className="w-4 h-4 text-muted-foreground" />
+                            <span>{term}</span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      }
     </div>
   );
 }

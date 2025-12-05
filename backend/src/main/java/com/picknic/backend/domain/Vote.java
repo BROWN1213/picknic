@@ -25,8 +25,15 @@ public class Vote {
     @Column(columnDefinition = "TEXT")
     private String description;
 
+    @Column(columnDefinition = "TEXT")
+    private String imageUrl;
+
     @Column(nullable = false)
     private String creatorId;
+
+    private String category;
+
+    private String schoolName;
 
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -56,15 +63,27 @@ public class Vote {
         this.totalVotes++;
     }
 
+    public void setTotalVotes(Integer totalVotes) {
+        this.totalVotes = totalVotes;
+    }
+
+    public void setCategory(String category) {
+        this.category = category;
+    }
+
     public void addOption(VoteOption option) {
         this.options.add(option);
         option.setVote(this);
     }
 
-    public void updateInfo(String title, String description, LocalDateTime expiresAt) {
+    public void updateInfo(String title, String description, String category, LocalDateTime expiresAt, String imageUrl) {
         this.title = title;
         this.description = description;
+        this.category = category;
         this.expiresAt = expiresAt;
+        if (imageUrl != null) {
+            this.imageUrl = imageUrl;
+        }
     }
 
     // close 메서드 추가

@@ -19,10 +19,13 @@ public class VoteResultResponse {
     private LocalDateTime createdAt;
     private LocalDateTime expiresAt;
     private Boolean isActive;
+    private String category;
+    private String schoolName;
     private List<VoteOptionResponse> options;
     private VoteOptionResponse winningOption;  // 1등 선택지
+    private VoteAnalysisDto analysis;  // 투표 분석 데이터
 
-    public static VoteResultResponse from(Vote vote) {
+    public static VoteResultResponse from(Vote vote, VoteAnalysisDto analysis) {
         List<VoteOptionResponse> optionResponses = vote.getOptions().stream()
                 .map(option -> VoteOptionResponse.from(option, vote.getTotalVotes()))
                 .collect(Collectors.toList());
@@ -39,8 +42,11 @@ public class VoteResultResponse {
                 .createdAt(vote.getCreatedAt())
                 .expiresAt(vote.getExpiresAt())
                 .isActive(vote.getIsActive())
+                .category(vote.getCategory())
+                .schoolName(vote.getSchoolName())
                 .options(optionResponses)
                 .winningOption(winner)
+                .analysis(analysis)
                 .build();
     }
 }

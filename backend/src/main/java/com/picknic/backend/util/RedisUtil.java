@@ -57,4 +57,16 @@ public class RedisUtil {
         }
         return count;
     }
+
+    // 카운터 조회 (GET)
+    // 리턴값: 현재 카운트 (존재하지 않으면 null)
+    public Long getCounter(String key) {
+        try {
+            String value = redisTemplate.opsForValue().get(key);
+            return value != null ? Long.parseLong(value) : null;
+        } catch (Exception e) {
+            log.error("Redis getCounter 실패 - key: {}", key, e);
+            return null;
+        }
+    }
 }

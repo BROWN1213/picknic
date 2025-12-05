@@ -7,9 +7,12 @@ import com.picknic.backend.domain.UserPoint;
 import com.picknic.backend.dto.point.DailyCheckInResponse;
 import com.picknic.backend.dto.point.PointHistoryDto;
 import com.picknic.backend.dto.point.PointHistoryResponse;
+import com.picknic.backend.entity.User;
+import com.picknic.backend.exception.BadRequestException;
 import com.picknic.backend.repository.PointHistoryRepository;
 import com.picknic.backend.repository.RewardRepository;
 import com.picknic.backend.repository.UserPointRepository;
+import com.picknic.backend.repository.UserRepository;
 import com.picknic.backend.util.RedisUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -17,6 +20,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
@@ -33,10 +37,11 @@ public class PointService {
     private final UserPointRepository userPointRepository;
     private final PointHistoryRepository pointHistoryRepository;
     private final RewardRepository rewardRepository;
+    private final UserRepository userRepository;
     private final RedisUtil redisUtil;
 
     // 일일 제한 설정
-    private static final int VOTE_DAILY_LIMIT = 20;
+    private static final int VOTE_DAILY_LIMIT = 10;
     private static final int CREATE_DAILY_LIMIT = 5;
     private static final long TTL_24_HOURS = 86400L; // 24시간 (초 단위)
 
@@ -48,12 +53,21 @@ public class PointService {
      * @param amount 적립 포인트
      * @param schoolName 학교 이름 (학교별 랭킹용, nullable)
      * @param referenceId 참조 ID (voteId 등, nullable)
-     * @throws IllegalStateException 일일 제한 초과 시
      */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void earnPoints(String userId, PointType type, int amount, String schoolName, String referenceId) {
-        // 1. Redis로 일일 제한 체크
-        checkDailyLimit(userId, type);
+        // 0. Check if user is a system account - skip point earning
+        User user = userRepository.findByEmail(userId).orElse(null);
+        if (user != null && user.getIsSystemAccount()) {
+            log.info("시스템 계정은 포인트를 받지 않습니다 - userId: {}", userId);
+            return;
+        }
+
+        // 1. Redis로 일일 제한 체크 - 제한 초과시 포인트만 지급하지 않음
+        if (!checkDailyLimit(userId, type)) {
+            log.info("일일 제한 초과로 포인트를 지급하지 않습니다 - userId: {}, type: {}", userId, type);
+            return;
+        }
 
         // 2. DB 트랜잭션: UserPoint 업데이트
         UserPoint userPoint = userPointRepository.findByUserId(userId)
@@ -77,10 +91,7 @@ public class PointService {
         // 주간 랭킹에 추가
         redisUtil.incrementScore("leaderboard:weekly", userId, amount);
 
-        // 학교별 랭킹에 추가 (schoolName이 유효한 경우)
-        if (schoolName != null && !schoolName.trim().isEmpty()) {
-            redisUtil.incrementScore("leaderboard:school", schoolName, amount);
-        }
+        // 학교별 랭킹은 실시간 합산으로 계산 (Redis 업데이트 제거)
 
         log.info("포인트 적립 완료 - userId: {}, type: {}, amount: {}", userId, type, amount);
     }
@@ -106,11 +117,11 @@ public class PointService {
 
             // 3. 검증
             if (reward.getStock() <= 0) {
-                throw new IllegalStateException("리워드 재고가 부족합니다.");
+                throw new BadRequestException("리워드 재고가 부족합니다.");
             }
 
             if (userPoint.getCurrentPoints() < reward.getCost()) {
-                throw new IllegalStateException(
+                throw new BadRequestException(
                         String.format("포인트가 부족합니다. (필요: %d, 보유: %d)",
                                 reward.getCost(), userPoint.getCurrentPoints())
                 );
@@ -177,12 +188,12 @@ public class PointService {
      *
      * @param userId 사용자 ID
      * @param type 포인트 타입
-     * @throws IllegalStateException 제한 초과 시
+     * @return 제한 내인 경우 true, 제한 초과인 경우 false
      */
-    private void checkDailyLimit(String userId, PointType type) {
+    private boolean checkDailyLimit(String userId, PointType type) {
         // VOTE와 CREATE 타입만 제한 적용
         if (type != PointType.VOTE && type != PointType.CREATE) {
-            return;
+            return true;
         }
 
         // Redis 키 생성: limit:{type}:{date}:{userId}
@@ -198,14 +209,69 @@ public class PointService {
         int limit = (type == PointType.VOTE) ? VOTE_DAILY_LIMIT : CREATE_DAILY_LIMIT;
 
         if (currentCount != null && currentCount > limit) {
-            throw new IllegalStateException(
-                    String.format("일일 %s 제한을 초과했습니다. (제한: %d회/일)",
-                            type.name(), limit)
-            );
+            log.info("일일 제한 초과 - userId: {}, type: {}, count: {}/{}",
+                    userId, type, currentCount, limit);
+            return false;
         }
 
         log.debug("일일 제한 체크 통과 - userId: {}, type: {}, count: {}/{}",
                 userId, type, currentCount, limit);
+        return true;
+    }
+
+    /**
+     * 일일 남은 횟수 조회
+     *
+     * @param userId 사용자 ID
+     * @param type 포인트 타입 (VOTE 또는 CREATE)
+     * @return 남은 횟수 (제한 - 현재 사용량)
+     */
+    public int getRemainingCount(String userId, PointType type) {
+        // VOTE와 CREATE 타입만 제한 적용
+        if (type != PointType.VOTE && type != PointType.CREATE) {
+            return -1; // 제한 없음
+        }
+
+        // Redis 키 생성: limit:{type}:{date}:{userId}
+        String limitKey = String.format("limit:%s:%s:%s",
+                type.name(),
+                LocalDate.now().toString(),
+                userId);
+
+        // 현재 카운트 조회
+        Long currentCount = redisUtil.getCounter(limitKey);
+        if (currentCount == null) {
+            currentCount = 0L;
+        }
+
+        // 제한값
+        int limit = (type == PointType.VOTE) ? VOTE_DAILY_LIMIT : CREATE_DAILY_LIMIT;
+
+        // 남은 횟수 계산
+        int remaining = Math.max(0, limit - currentCount.intValue());
+
+        log.debug("남은 횟수 조회 - userId: {}, type: {}, remaining: {}/{}",
+                userId, type, remaining, limit);
+
+        return remaining;
+    }
+
+    /**
+     * 일일 제한 정보 조회
+     *
+     * @param userId 사용자 ID
+     * @return DailyLimitResponse (voteRemaining, createRemaining, voteLimit, createLimit)
+     */
+    public com.picknic.backend.dto.point.DailyLimitResponse getDailyLimit(String userId) {
+        int voteRemaining = getRemainingCount(userId, PointType.VOTE);
+        int createRemaining = getRemainingCount(userId, PointType.CREATE);
+
+        return com.picknic.backend.dto.point.DailyLimitResponse.builder()
+                .voteRemaining(voteRemaining)
+                .createRemaining(createRemaining)
+                .voteLimit(VOTE_DAILY_LIMIT)
+                .createLimit(CREATE_DAILY_LIMIT)
+                .build();
     }
 
     /**
@@ -230,7 +296,7 @@ public class PointService {
         Long currentCount = redisUtil.incrementCounterWithLimit(limitKey, TTL_24_HOURS);
 
         if (currentCount != null && currentCount > 1) {
-            throw new IllegalStateException("오늘 이미 출석 체크를 완료했습니다.");
+            throw new BadRequestException("오늘 이미 출석 체크를 완료했습니다.");
         }
 
         // 3. 포인트 적립 (+5P)

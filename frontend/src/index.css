@@ -423,6 +423,11 @@
     letter-spacing: -.02em;
     font-family: Pretendard Variable, Inter, -apple-system, BlinkMacSystemFont, system-ui, Segoe UI, Noto Sans KR, sans-serif;
     font-weight: 500;
+    cursor: default;
+  }
+
+  input, textarea {
+    cursor: text;
   }
 
   :where(:not(:has([class*=" text-"]), :not(:has([class^="text-"])))) h1 {

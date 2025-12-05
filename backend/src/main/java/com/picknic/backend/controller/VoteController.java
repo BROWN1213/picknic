@@ -5,13 +5,16 @@ import com.picknic.backend.dto.vote.CastVoteRequest;
 import com.picknic.backend.dto.vote.CreateVoteRequest;
 import com.picknic.backend.dto.vote.VoteResponse;
 import com.picknic.backend.dto.vote.VoteResultResponse;
+import com.picknic.backend.service.S3Service;
 import com.picknic.backend.service.VoteService;
 import com.picknic.backend.util.SecurityUtils;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/votes")
@@ -20,6 +23,14 @@ public class VoteController {
 
     private final VoteService voteService;
     private final SecurityUtils securityUtils;
+    private final S3Service s3Service;
+
+    // 이미지 업로드 (투표 생성 전)
+    @PostMapping("/upload-image")
+    public ApiResponse<Map<String, String>> uploadImage(@RequestParam("image") MultipartFile image) {
+        String imageUrl = s3Service.uploadFile(image, "votes");
+        return ApiResponse.success(Map.of("imageUrl", imageUrl));
+    }
 
     // 투표 생성 (+10P, 일일 5회 제한)
     @PostMapping

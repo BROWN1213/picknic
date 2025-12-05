@@ -18,6 +18,10 @@ public class CreateVoteRequest {
 
     private String description;
 
+    private String imageUrl;
+
+    private String category;
+
     @NotNull(message = "선택지는 필수입니다")
     @Size(min = 2, max = 10, message = "선택지는 2개 이상 10개 이하여야 합니다")
     private List<String> options;

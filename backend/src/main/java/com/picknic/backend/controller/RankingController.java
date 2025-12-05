@@ -3,6 +3,8 @@ package com.picknic.backend.controller;
 import com.picknic.backend.dto.common.ApiResponse;
 import com.picknic.backend.dto.ranking.PersonalRankingResponse;
 import com.picknic.backend.dto.ranking.SchoolRankingResponse;
+import com.picknic.backend.entity.User;
+import com.picknic.backend.repository.UserRepository;
 import com.picknic.backend.service.RankingService;
 import com.picknic.backend.util.SecurityUtils;
 import io.swagger.v3.oas.annotations.Operation;
@@ -34,6 +36,7 @@ public class RankingController {
 
     private final RankingService rankingService;
     private final SecurityUtils securityUtils;
+    private final UserRepository userRepository;
 
     /**
      * 개인 랭킹 조회
@@ -145,9 +148,15 @@ public class RankingController {
     ) {
         log.info("학교별 랭킹 조회 요청 - limit: {}, offset: {}", limit, offset);
 
-        // 현재 사용자 ID 조회 (Mock)
-        // TODO: 실제 사용자의 학교 정보 조회 (현재는 null로 처리)
-        String userSchool = null;
+        // 현재 사용자 ID 조회
+        String userId = securityUtils.getCurrentUserId();
+
+        // 사용자의 학교 정보 조회
+        String userSchool = userRepository.findByEmail(userId)
+                .map(User::getSchoolName)
+                .orElse(null);
+
+        log.info("사용자 학교: {}", userSchool);
 
         // RankingService를 통해 랭킹 조회
         SchoolRankingResponse ranking = rankingService.getSchoolRanking(userSchool, limit, offset);
