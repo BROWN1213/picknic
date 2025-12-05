@@ -6,7 +6,7 @@ import { Button } from './ui/button';
 import { Label } from './ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { cn } from './ui/utils';
-import { School, schoolService } from '../services/schoolService';
+import { type School, schoolService } from '../services/schoolService';
 
 interface SchoolSelectorProps {
   value: string;
