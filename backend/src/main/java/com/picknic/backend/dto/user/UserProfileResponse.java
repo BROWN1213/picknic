@@ -64,4 +64,9 @@ public class UserProfileResponse {
      * 시스템 계정 여부 (시스템 계정은 모든 투표 삭제 가능)
      */
     private Boolean isSystemAccount;
+
+    /**
+     * 프로필 완성 여부 (학교 인증 완료 = true)
+     */
+    private Boolean profileCompleted;
 }

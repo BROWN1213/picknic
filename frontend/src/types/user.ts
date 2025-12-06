@@ -7,4 +7,5 @@ export interface UserProfile {
   levelIcon: string;
   verifiedSchool: string | null;
   isSystemAccount?: boolean;
+  profileCompleted: boolean;
 }

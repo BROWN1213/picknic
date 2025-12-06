@@ -25,6 +25,7 @@ public class UserService {
     private final UserPointRepository userPointRepository;
     private final UserRepository userRepository;
     private final RedisUtil redisUtil;
+    private final OAuthUserService oauthUserService;
 
     /**
      * 내 프로필 조회
@@ -64,6 +65,7 @@ public class UserService {
                 .levelIcon(level.getIcon())
                 .verifiedSchool(user.getSchoolName())
                 .isSystemAccount(user.getIsSystemAccount())
+                .profileCompleted(oauthUserService.isProfileComplete(user))
                 .build();
 
         log.info("프로필 조회 완료 - userId: {}, points: {}, rank: {}, level: {}",

@@ -31,9 +31,18 @@ export function LoginPage({ onLoginSuccess, onNeedRegister }: LoginPageProps) {
     try {
       const profile = await apiClient.get("/users/me");
 
-      // 계정이 있으면 로그인 성공
-      onLoginSuccess(profile);
-      toast.success("로그인 성공! 환영합니다.");
+      // 프로필 완성 여부 확인
+      if (!profile.profileCompleted) {
+        // 프로필 미완성 → 회원가입 2단계로 이동
+        const email = auth.user?.profile?.email || "";
+        const providerId = auth.user?.profile?.sub || "";
+        toast.info("프로필 설정을 완료해주세요.");
+        onNeedRegister(email, providerId);
+      } else {
+        // 프로필 완성 → 로그인 성공
+        onLoginSuccess(profile);
+        toast.success("로그인 성공! 환영합니다.");
+      }
     } catch (error: any) {
       console.error("Failed to load user profile:", error);
 

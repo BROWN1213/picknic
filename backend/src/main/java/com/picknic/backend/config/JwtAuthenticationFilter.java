@@ -31,6 +31,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final CognitoTokenValidator cognitoValidator;
     private final CustomUserDetailsService customUserDetailsService;
     private final UserRepository userRepository;
+    private final com.picknic.backend.service.OAuthUserService oauthUserService;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
@@ -46,17 +47,19 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 try {
                     DecodedJWT cognitoToken = cognitoValidator.validateAndDecode(jwt);
                     String email = cognitoValidator.getEmailFromToken(cognitoToken);
+                    String providerId = cognitoValidator.getCognitoSubFromToken(cognitoToken);
 
-                    // 계정이 있는지 확인 (없으면 401 에러로 회원가입 유도)
-                    User user = userRepository.findByEmail(email).orElse(null);
-                    if (user == null) {
-                        System.out.println("User not found for OAuth email: " + email);
-                        // 인증 설정하지 않음 -> 401 Unauthorized 반환됨
-                    } else {
-                        // Spring Security Context 설정
-                        setAuthentication(user, request);
-                        System.out.println("Authenticated via Cognito ID token: " + email);
-                    }
+                    // OAuth 사용자 자동 생성 또는 조회
+                    User user = oauthUserService.getOrCreateOAuthUser(
+                            email,
+                            providerId,
+                            User.AuthProvider.GOOGLE
+                    );
+
+                    // 인증 컨텍스트 설정 (프로필 미완성 사용자도 인증됨)
+                    setAuthentication(user, request);
+                    System.out.println("OAuth user authenticated: email=" + email +
+                            ", profileComplete=" + oauthUserService.isProfileComplete(user));
 
                 } catch (JWTVerificationException cognitoEx) {
                     // 2단계: 커스텀 JWT 시도 (LOCAL 사용자)
