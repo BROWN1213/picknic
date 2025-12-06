@@ -1,7 +1,7 @@
 package com.picknic.backend.controller;
 
 import com.picknic.backend.domain.Notification;
-import com.picknic.backend.dto.ApiResponse;
+import com.picknic.backend.dto.common.ApiResponse;
 import com.picknic.backend.service.NotificationService;
 import com.picknic.backend.util.SecurityUtils;
 import lombok.RequiredArgsConstructor;
