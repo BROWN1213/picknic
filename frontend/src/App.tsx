@@ -177,10 +177,19 @@ export default function App() {
   };
 
   const handleSignupSuccess = (user: any) => {
-    setAuthStep("LOGIN");
-    setCurrentUser(null);
-    setSignupData(null);
-    toast.success("회원가입이 완료되었습니다! 로그인해주세요.");
+    if (signupData?.providerId && signupData.providerId !== "local") {
+      // OAuth user - directly log in (already has valid token)
+      setCurrentUser(user);
+      setAuthStep("APP");
+      setSignupData(null);
+      toast.success("프로필 설정이 완료되었습니다! 환영합니다.");
+    } else {
+      // Local user - redirect to login page
+      setAuthStep("LOGIN");
+      setCurrentUser(null);
+      setSignupData(null);
+      toast.success("회원가입이 완료되었습니다! 로그인해주세요.");
+    }
   };
 
   const handleBackToLogin = () => {
@@ -315,6 +324,15 @@ export default function App() {
     }
   };
 
+  const handleHotToggle = async (voteId: string, updatedVote: VoteType) => {
+    // Update local state with the updated vote from API response
+    setAllVotesData(prev =>
+      prev.map(vote =>
+        vote.id === voteId ? updatedVote : vote
+      )
+    );
+  };
+
   const navItems = [
     { id: "hot", icon: Flame, label: "HOT" },
     { id: "all", icon: Compass, label: "전체" },
@@ -331,10 +349,9 @@ export default function App() {
     // LOCAL 사용자용
     localStorage.removeItem("token");
 
-    // OAuth 사용자용
+    // OAuth 사용자용 (로컬 로그아웃만 수행, Cognito redirect 제거)
     if (auth.isAuthenticated) {
-      auth.removeUser();
-      auth.signoutRedirect();
+      auth.removeUser(); // Clear local OAuth context
     }
 
     toast.info("로그아웃 되었습니다");
@@ -563,6 +580,7 @@ export default function App() {
                         onVote={handleVote}
                         onViewStats={handleViewStats}
                         onDelete={handleDeleteVote}
+                        onHotToggle={handleHotToggle}
                         currentUserId={userProfile?.userId}
                         isSystemAccount={userProfile?.isSystemAccount}
                       />
@@ -838,6 +856,7 @@ export default function App() {
                             onVote={handleVote}
                             onViewStats={handleViewStats}
                             onDelete={handleDeleteVote}
+                            onHotToggle={handleHotToggle}
                             currentUserId={userProfile?.userId}
                             isSystemAccount={userProfile?.isSystemAccount}
                           />

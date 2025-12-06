@@ -273,19 +273,35 @@ export function SignupPage({
     const handleSubmit = async () => {
         setIsLoading(true);
         try {
-            // OAuth 회원가입과 LOCAL 회원가입 모두 /auth/register 사용
-            const payload = {
-                email: formData.email,
-                password: isOAuthSignup ? "" : formData.password, // OAuth는 빈 문자열
-                nickname: formData.nickname,
-                gender: formData.gender,
-                birthYear: parseInt(formData.birthYear),
-                schoolName: formData.schoolName,
-                interests: formData.interests,
-                providerId: providerId || "local"
-            };
-            const user = await apiClient.post("/auth/register", payload);
-            onSignupSuccess(user);
+            if (isOAuthSignup) {
+                // OAuth user completing profile → UPDATE existing user
+                const payload = {
+                    nickname: formData.nickname,
+                    gender: formData.gender,
+                    birthYear: parseInt(formData.birthYear),
+                    schoolName: formData.schoolName,
+                    interests: formData.interests
+                };
+                await apiClient.post("/auth/complete-profile", payload);
+
+                // Fetch updated profile to get profileCompleted: true
+                const updatedProfile = await apiClient.get("/users/me");
+                onSignupSuccess(updatedProfile);
+            } else {
+                // Local user registration → CREATE new user
+                const payload = {
+                    email: formData.email,
+                    password: formData.password,
+                    nickname: formData.nickname,
+                    gender: formData.gender,
+                    birthYear: parseInt(formData.birthYear),
+                    schoolName: formData.schoolName,
+                    interests: formData.interests,
+                    providerId: "local"
+                };
+                const user = await apiClient.post("/auth/register", payload);
+                onSignupSuccess(user);
+            }
         } catch (error: any) {
             const errorMessage = error.response?.message || error.message || "회원가입 중 오류가 발생했습니다.";
             toast.error(errorMessage);

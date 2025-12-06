@@ -3,7 +3,7 @@ import { Card } from "./ui/card";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { Progress } from "./ui/progress";
-import { TrendingUp, Users, ChevronRight, Archive, CheckCircle, Trash2, Clock, Flame } from "lucide-react";
+import { TrendingUp, Users, ChevronRight, Archive, CheckCircle, Trash2, Clock, Flame, Loader2 } from "lucide-react";
 import { ImageWithFallback } from "./figma/ImageWithFallback";
 import { motion, AnimatePresence } from "motion/react";
 import {
@@ -54,9 +54,10 @@ interface VotingCardProps {
   onDelete?: (voteId: string) => void;
   currentUserId?: string;
   isSystemAccount?: boolean;
+  onHotToggle?: (voteId: string, updatedVote: Vote) => void;
 }
 
-export function VotingCard({ vote, onVote, onViewStats, onDelete, currentUserId, isSystemAccount }: VotingCardProps) {
+export function VotingCard({ vote, onVote, onViewStats, onDelete, currentUserId, isSystemAccount, onHotToggle }: VotingCardProps) {
   const [selectedOption, setSelectedOption] = useState<string | null>(
     vote.userVoted || null
   );
@@ -69,6 +70,7 @@ export function VotingCard({ vote, onVote, onViewStats, onDelete, currentUserId,
     endX: 0,
     endY: 0
   });
+  const [isTogglingHot, setIsTogglingHot] = useState(false);
   const ballotBoxRef = useRef<HTMLDivElement>(null);
 
   // Check if vote is expired or closed
@@ -190,25 +192,45 @@ export function VotingCard({ vote, onVote, onViewStats, onDelete, currentUserId,
       {isSystemAccount && (
         <button
           onClick={async () => {
+            if (isTogglingHot) return; // Prevent double-clicks
+
+            setIsTogglingHot(true);
             try {
-              await voteService.toggleHot(Number(vote.id));
+              const updatedVote = await voteService.toggleHot(Number(vote.id));
               toast.success(vote.isHot ? "HOT 해제되었습니다" : "HOT으로 표시되었습니다");
-              // Reload page to refresh vote data
-              window.location.reload();
+
+              // Update parent state instead of page reload
+              if (onHotToggle) {
+                onHotToggle(vote.id, updatedVote as unknown as Vote);
+              }
             } catch (error: any) {
               const errorMessage = error?.response?.data?.message || "HOT 상태 변경에 실패했습니다";
               toast.error(errorMessage);
+            } finally {
+              setIsTogglingHot(false);
             }
           }}
+          disabled={isTogglingHot}
           className={`absolute z-30 flex items-center gap-2 px-3 py-2 text-sm font-semibold text-white ${
             vote.isHot
               ? 'bg-orange-500/20 hover:bg-orange-500/30 border-2 border-orange-500/50 hover:border-orange-500'
               : 'bg-lime-500/20 hover:bg-lime-500/30 border-2 border-lime-500/50 hover:border-lime-500'
-          } rounded-lg transition-all duration-200 shadow-lg hover:scale-105 active:scale-95`}
+          } rounded-lg transition-all duration-200 shadow-lg hover:scale-105 active:scale-95 ${
+            isTogglingHot ? 'opacity-50 cursor-not-allowed' : ''
+          }`}
           style={{ top: '92px', right: canDelete ? '110px' : '16px' }}
         >
-          <Flame className="w-4 h-4" />
-          <span>{vote.isHot ? 'HOT 해제' : 'HOT 표시'}</span>
+          {isTogglingHot ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span>{vote.isHot ? 'HOT 해제 중...' : 'HOT 표시 중...'}</span>
+            </>
+          ) : (
+            <>
+              <Flame className="w-4 h-4" />
+              <span>{vote.isHot ? 'HOT 해제' : 'HOT 표시'}</span>
+            </>
+          )}
         </button>
       )}
 

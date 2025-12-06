@@ -23,7 +23,7 @@ const convertToVote = (backendVote: any): any => {
       image: opt.imageUrl
     })),
     totalVotes: backendVote.totalVotes,
-    isHot: backendVote.totalVotes > 100,
+    isHot: backendVote.isHot,
     timeLeft: backendVote.timeLeft, // Use actual time left from backend
     userVoted: backendVote.hasVoted ? String(backendVote.userSelectedOptionId) : null,
     status: backendVote.isActive ? 'active' : 'closed',

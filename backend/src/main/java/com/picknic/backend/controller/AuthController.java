@@ -59,6 +59,16 @@ public class AuthController {
     @PostMapping("/register")
     public ResponseEntity<?> register(@RequestBody UserSignupDto dto) {
         try {
+            // Prevent OAuth users from using /register endpoint
+            if (dto.getProviderId() != null && !dto.getProviderId().equals("local")) {
+                User existingUser = userRepository.findByEmail(dto.getEmail()).orElse(null);
+                if (existingUser != null) {
+                    return ResponseEntity.badRequest().body(Map.of(
+                        "message", "OAuth 사용자는 /auth/complete-profile 엔드포인트를 사용해주세요."
+                    ));
+                }
+            }
+
             User user = authService.register(dto);
             return ResponseEntity.ok(user);
         } catch (RuntimeException e) {
