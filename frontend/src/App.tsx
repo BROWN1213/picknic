@@ -16,6 +16,7 @@ import {
   Compass,
   Filter,
   X,
+  Loader2,
 } from "lucide-react";
 import { VotingCard, type Vote as VoteType } from "./components/VotingCard";
 import { VoteAnalysisModal } from "./components/VoteAnalysisModal";
@@ -50,6 +51,7 @@ export default function App() {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [userPoints, setUserPoints] = useState(1750);
   const [userRank, setUserRank] = useState(6);
+  const [isLoadingData, setIsLoadingData] = useState(false);
   const [selectedVote, setSelectedVote] = useState<VoteType | null>(null);
   const [isAnalysisModalOpen, setIsAnalysisModalOpen] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -74,7 +76,13 @@ export default function App() {
   // API 클라이언트에 토큰 제공자 설정
   useEffect(() => {
     apiClient.setTokenProvider(() => {
-      return auth.user?.id_token || null;
+      // OAuth 사용자: Cognito ID 토큰
+      const oauthToken = auth.user?.id_token;
+      if (oauthToken) {
+        return oauthToken;
+      }
+      // LOCAL 사용자: localStorage의 커스텀 JWT 토큰
+      return localStorage.getItem("token");
     });
   }, [auth.user]);
 
@@ -111,6 +119,7 @@ export default function App() {
   const loadInitialData = async () => {
     if (authStep !== "APP") return;
 
+    setIsLoadingData(true);
     try {
       // Load user profile
       const profile = await userService.getMyProfile();
@@ -129,6 +138,8 @@ export default function App() {
     } catch (error) {
       console.error('Failed to load initial data:', error);
       toast.error('데이터를 불러오는데 실패했습니다.');
+    } finally {
+      setIsLoadingData(false);
     }
   };
 
@@ -340,21 +351,34 @@ export default function App() {
     { id: "profile", icon: User, label: "프로필" },
   ];
 
-  const handleLogout = () => {
-    setAuthStep("LOGIN");
+  const handleLogout = async () => {
+    // Clear user state first
+    setCurrentUser(null);
+    setUserProfile(null);
     setVerifiedSchool(null);
     setActiveTab("hot");
-    setCurrentUser(null);
+    setAllVotesData([]);
+    setNotifications([]);
 
     // LOCAL 사용자용
     localStorage.removeItem("token");
 
     // OAuth 사용자용 (로컬 로그아웃만 수행, Cognito redirect 제거)
     if (auth.isAuthenticated) {
-      auth.removeUser(); // Clear local OAuth context
+      try {
+        await auth.removeUser(); // Clear local OAuth context
+      } catch (error) {
+        console.error("Error during OAuth logout:", error);
+      }
     }
 
-    toast.info("로그아웃 되었습니다");
+    // Clear all session storage to remove OIDC tokens and state
+    sessionStorage.clear();
+
+    // Reset auth step to trigger re-render
+    setAuthStep("LOGIN");
+
+    toast.success("로그아웃 되었습니다. 안전하게 로그아웃되었어요! 👋");
   };
 
 
@@ -562,8 +586,19 @@ export default function App() {
           {/* Content Area */}
           <div className="flex-1 overflow-y-auto">
             <div className="px-4 lg:px-8 py-6 pb-32 lg:pb-6">
-              {/* HOT Feed */}
-              {activeTab === "hot" && (
+              {/* Loading State */}
+              {isLoadingData ? (
+                <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
+                  <Loader2 className="w-12 h-12 text-lime-500 animate-spin" />
+                  <div className="text-center space-y-2">
+                    <p className="text-white text-lg font-medium">데이터를 불러오는 중...</p>
+                    <p className="text-white/40 text-sm">잠시만 기다려주세요</p>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {/* HOT Feed */}
+                  {activeTab === "hot" && (
                 <div className="space-y-6">
                   <div>
                     <h2 className="text-3xl text-white mb-2">🔥 실시간 HOT 투표</h2>
@@ -907,6 +942,8 @@ export default function App() {
                     dailyLimit={dailyLimit}
                   />
                 </div>
+              )}
+                </>
               )}
             </div>
           </div>

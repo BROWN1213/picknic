@@ -285,7 +285,8 @@ export function SignupPage({
                 await apiClient.post("/auth/complete-profile", payload);
 
                 // Fetch updated profile to get profileCompleted: true
-                const updatedProfile = await apiClient.get("/users/me");
+                const profileResponse: any = await apiClient.get("/users/me");
+                const updatedProfile = profileResponse.data; // Extract data from ApiResponse wrapper
                 onSignupSuccess(updatedProfile);
             } else {
                 // Local user registration → CREATE new user
@@ -654,6 +655,21 @@ export function SignupPage({
                                         <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
                                     </Button>
                                 </div>
+
+                                {/* Back to Login Link */}
+                                {onBackToLogin && (
+                                    <div className="mt-6 text-center">
+                                        <p className="text-white/40 text-sm">
+                                            이미 계정이 있으신가요?{" "}
+                                            <button
+                                                onClick={onBackToLogin}
+                                                className="text-lime-400 hover:text-lime-300 font-semibold hover:underline transition-all ml-1"
+                                            >
+                                                로그인
+                                            </button>
+                                        </p>
+                                    </div>
+                                )}
                             </div>
                         )}
 

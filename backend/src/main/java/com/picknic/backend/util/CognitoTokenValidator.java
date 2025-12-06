@@ -61,12 +61,15 @@ public class CognitoTokenValidator {
             Algorithm algorithm = Algorithm.RSA256(publicKey, null);
 
             // 4. JWT 검증 (서명, issuer, 만료시간)
+            // leeway: 시계 동기화 문제를 위해 60초 여유 시간 추가
             JWTVerifier verifier = JWT.require(algorithm)
                 .withIssuer(issuer)
                 .withClaim("token_use", "id") // ID 토큰만 허용
+                .acceptLeeway(60) // 60초 leeway 추가 (clock skew 허용)
                 .build();
 
-            return verifier.verify(idToken);
+            DecodedJWT verified = verifier.verify(idToken);
+            return verified;
 
         } catch (Exception e) {
             throw new JWTVerificationException("Invalid Cognito ID token", e);

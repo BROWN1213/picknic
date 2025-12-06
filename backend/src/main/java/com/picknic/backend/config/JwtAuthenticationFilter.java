@@ -37,8 +37,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
 
-        System.out.println("JwtAuthenticationFilter processing request: " + request.getRequestURI());
-
         try {
             String jwt = getJwtFromRequest(request);
 
@@ -58,8 +56,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
                     // 인증 컨텍스트 설정 (프로필 미완성 사용자도 인증됨)
                     setAuthentication(user, request);
-                    System.out.println("OAuth user authenticated: email=" + email +
-                            ", profileComplete=" + oauthUserService.isProfileComplete(user));
 
                 } catch (JWTVerificationException cognitoEx) {
                     // 2단계: 커스텀 JWT 시도 (LOCAL 사용자)
@@ -68,8 +64,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                             String email = tokenProvider.getEmailFromToken(jwt);
                             UserDetails userDetails = customUserDetailsService.loadUserByUsername(email);
                             setAuthentication(userDetails, request);
-
-                            System.out.println("Authenticated via custom JWT: " + email);
                         }
                     } catch (Exception jwtEx) {
                         logger.error("Both token validation methods failed", jwtEx);

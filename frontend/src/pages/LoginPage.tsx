@@ -22,6 +22,8 @@ export function LoginPage({ onLoginSuccess, onNeedRegister }: LoginPageProps) {
 
   useEffect(() => {
     setMounted(true);
+    // Reset auth processing flag on mount to allow fresh login
+    hasProcessedAuth.current = false;
   }, []);
 
   const handleOidcLogin = useCallback(async () => {
@@ -29,7 +31,15 @@ export function LoginPage({ onLoginSuccess, onNeedRegister }: LoginPageProps) {
     hasProcessedAuth.current = true;
 
     try {
-      const profile = await apiClient.get("/users/me");
+      // Ensure token provider is set before making API call
+      const idToken = auth.user?.id_token;
+
+      apiClient.setTokenProvider(() => {
+        return idToken || null;
+      });
+
+      const response: any = await apiClient.get("/users/me");
+      const profile = response.data; // Extract data from ApiResponse wrapper
 
       // 프로필 완성 여부 확인
       if (!profile.profileCompleted) {
@@ -89,7 +99,8 @@ export function LoginPage({ onLoginSuccess, onNeedRegister }: LoginPageProps) {
         localStorage.setItem("token", response.token);
       }
 
-      const profile = await apiClient.get("/users/me");
+      const profileResponse: any = await apiClient.get("/users/me");
+      const profile = profileResponse.data; // Extract data from ApiResponse wrapper
       onLoginSuccess(profile);
       toast.success("로그인 성공! 환영합니다.");
 
