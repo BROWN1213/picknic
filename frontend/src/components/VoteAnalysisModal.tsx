@@ -34,19 +34,31 @@ interface VoteAnalysisModalProps {
 export const VoteAnalysisModal = memo(function VoteAnalysisModal({ isOpen, onClose, vote }: VoteAnalysisModalProps) {
     const [results, setResults] = useState<VoteResultResponse | null>(null);
     const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
         if (isOpen && vote) {
             // Clear previous results to show loading animation
             setResults(null);
             setIsLoading(true);
+            setError(null);
 
             const loadResults = async () => {
                 try {
                     const data = await voteService.getVoteResults(Number(vote.id));
                     setResults(data);
-                } catch (error) {
+                    setError(null);
+                } catch (error: any) {
                     console.error("Failed to load vote results:", error);
+
+                    // User-friendly error messages
+                    if (error.isTimeout) {
+                        setError("분석 데이터 로딩 시간이 초과되었습니다. 참여자가 많은 투표일 경우 시간이 걸릴 수 있습니다. 잠시 후 다시 시도해주세요.");
+                    } else if (error.message) {
+                        setError(error.message);
+                    } else {
+                        setError("투표 분석 데이터를 불러오는데 실패했습니다. 다시 시도해주세요.");
+                    }
                 } finally {
                     setIsLoading(false);
                 }
@@ -55,12 +67,13 @@ export const VoteAnalysisModal = memo(function VoteAnalysisModal({ isOpen, onClo
         } else {
             setResults(null);
             setIsLoading(false);
+            setError(null);
         }
     }, [isOpen, vote?.id]); // Only re-run when vote.id changes, not the entire vote object
 
     if (!vote) return null;
 
-    if (isLoading || !results) {
+    if (isLoading || error || !results) {
         return (
             <Dialog open={isOpen} onOpenChange={onClose}>
                 <DialogContent className="bg-[#1a1f2e] text-white border-white/10 max-w-md">
@@ -72,10 +85,46 @@ export const VoteAnalysisModal = memo(function VoteAnalysisModal({ isOpen, onClo
                             투표 결과와 참여자 분석 정보
                         </DialogDescription>
                     </DialogHeader>
-                    <div className="flex flex-col items-center justify-center py-16 gap-4">
-                        <Loader2 className="w-16 h-16 text-lime-500 animate-spin" />
-                        <p className="text-white/60 text-sm animate-pulse">분석 리포트를 불러오는 중...</p>
-                    </div>
+
+                    {isLoading ? (
+                        <div className="flex flex-col items-center justify-center py-16 gap-4">
+                            <Loader2 className="w-16 h-16 text-lime-500 animate-spin" />
+                            <p className="text-white/60 text-sm animate-pulse">분석 리포트를 불러오는 중...</p>
+                            <p className="text-white/40 text-xs">참여자가 많을 경우 시간이 걸릴 수 있습니다</p>
+                        </div>
+                    ) : error ? (
+                        <div className="flex flex-col items-center justify-center py-16 gap-4">
+                            <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center">
+                                <span className="text-4xl">⚠️</span>
+                            </div>
+                            <div className="text-center space-y-2 px-4">
+                                <p className="text-white text-base font-medium">데이터 로딩 실패</p>
+                                <p className="text-white/60 text-sm">{error}</p>
+                            </div>
+                            <button
+                                onClick={() => {
+                                    setError(null);
+                                    setIsLoading(true);
+                                    voteService.getVoteResults(Number(vote.id))
+                                        .then(data => {
+                                            setResults(data);
+                                            setError(null);
+                                        })
+                                        .catch((err: any) => {
+                                            if (err.isTimeout) {
+                                                setError("분석 데이터 로딩 시간이 초과되었습니다. 참여자가 많은 투표일 경우 시간이 걸릴 수 있습니다. 잠시 후 다시 시도해주세요.");
+                                            } else {
+                                                setError(err.message || "투표 분석 데이터를 불러오는데 실패했습니다.");
+                                            }
+                                        })
+                                        .finally(() => setIsLoading(false));
+                                }}
+                                className="px-6 py-2 bg-lime-500 hover:bg-lime-600 text-black rounded-lg font-medium transition-colors"
+                            >
+                                다시 시도
+                            </button>
+                        </div>
+                    ) : null}
                 </DialogContent>
             </Dialog>
         );

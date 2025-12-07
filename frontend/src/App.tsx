@@ -121,23 +121,29 @@ export default function App() {
 
     setIsLoadingData(true);
     try {
-      // Load user profile
-      const profile = await userService.getMyProfile();
+      // OPTIMIZATION: Load all data in parallel instead of sequentially
+      const [profile, votes, limit] = await Promise.all([
+        userService.getMyProfile(),
+        voteService.getVotes('active'),
+        pointService.getDailyLimit()
+      ]);
+
+      // Update all states
       setUserProfile(profile);
       setUserPoints(profile.points);
       setUserRank(profile.rank);
       setVerifiedSchool(profile.verifiedSchool);
-
-      // Load votes
-      const votes = await voteService.getVotes('active');
       setAllVotesData(votes as unknown as VoteType[]);
-
-      // Load daily limit
-      const limit = await pointService.getDailyLimit();
       setDailyLimit(limit);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to load initial data:', error);
-      toast.error('데이터를 불러오는데 실패했습니다.');
+
+      // User-friendly error messages
+      if (error.isTimeout) {
+        toast.error('데이터 로딩 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.');
+      } else {
+        toast.error('데이터를 불러오는데 실패했습니다. 페이지를 새로고침해주세요.');
+      }
     } finally {
       setIsLoadingData(false);
     }

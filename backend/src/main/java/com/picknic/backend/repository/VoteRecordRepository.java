@@ -22,4 +22,7 @@ public interface VoteRecordRepository extends JpaRepository<VoteRecord, Long> {
 
     // 특정 투표의 모든 참여 기록 조회
     List<VoteRecord> findByVoteId(Long voteId);
+
+    // 특정 사용자의 여러 투표에 대한 참여 기록 조회 (N+1 쿼리 방지용 배치 조회)
+    List<VoteRecord> findByUserIdAndVoteIdIn(String userId, List<Long> voteIds);
 }

@@ -175,12 +175,19 @@ public class VoteService {
             votes = voteRepository.findAllByOrderByCreatedAtDesc();
         }
 
+        // FIX N+1 QUERY: Batch load all vote records for this user in a single query
+        List<Long> voteIds = votes.stream()
+                .map(Vote::getId)
+                .collect(Collectors.toList());
+
+        Map<Long, VoteRecord> userVoteRecordMap = voteRecordRepository
+                .findByUserIdAndVoteIdIn(userId, voteIds)
+                .stream()
+                .collect(Collectors.toMap(VoteRecord::getVoteId, record -> record));
+
         return votes.stream()
                 .map(vote -> {
-                    VoteRecord record = voteRecordRepository
-                            .findByVoteIdAndUserId(vote.getId(), userId)
-                            .orElse(null);
-
+                    VoteRecord record = userVoteRecordMap.get(vote.getId());
                     boolean hasVoted = record != null;
                     Long selectedOptionId = hasVoted ? record.getSelectedOptionId() : null;
 
@@ -321,12 +328,19 @@ public class VoteService {
     public List<VoteResponse> getMyVotes(String userId) {
         List<Vote> votes = voteRepository.findByCreatorIdOrderByCreatedAtDesc(userId);
 
+        // FIX N+1 QUERY: Batch load all vote records
+        List<Long> voteIds = votes.stream()
+                .map(Vote::getId)
+                .collect(Collectors.toList());
+
+        Map<Long, VoteRecord> userVoteRecordMap = voteRecordRepository
+                .findByUserIdAndVoteIdIn(userId, voteIds)
+                .stream()
+                .collect(Collectors.toMap(VoteRecord::getVoteId, record -> record));
+
         return votes.stream()
                 .map(vote -> {
-                    VoteRecord record = voteRecordRepository
-                            .findByVoteIdAndUserId(vote.getId(), userId)
-                            .orElse(null);
-
+                    VoteRecord record = userVoteRecordMap.get(vote.getId());
                     boolean hasVoted = record != null;
                     Long selectedOptionId = hasVoted ? record.getSelectedOptionId() : null;
 
@@ -340,10 +354,19 @@ public class VoteService {
     public List<VoteResponse> getParticipatedVotes(String userId) {
         List<VoteRecord> records = voteRecordRepository.findByUserIdOrderByVotedAtDesc(userId);
 
+        // FIX N+1 QUERY: Batch load all votes
+        List<Long> voteIds = records.stream()
+                .map(VoteRecord::getVoteId)
+                .distinct()
+                .collect(Collectors.toList());
+
+        Map<Long, Vote> voteMap = voteRepository.findAllById(voteIds)
+                .stream()
+                .collect(Collectors.toMap(Vote::getId, vote -> vote));
+
         return records.stream()
                 .map(record -> {
-                    Vote vote = voteRepository.findByIdWithOptions(record.getVoteId())
-                            .orElse(null);
+                    Vote vote = voteMap.get(record.getVoteId());
                     if (vote == null) return null;
 
                     return VoteResponse.from(vote, true, record.getSelectedOptionId());
@@ -381,17 +404,31 @@ public class VoteService {
                     .build();
         }
 
-        // 2. 참여자 ID 목록 (email)
+        // 2. 참여자 ID 목록 (email) - Set으로 중복 제거
         List<String> participantEmails = records.stream()
                 .map(VoteRecord::getUserId)
+                .distinct()
                 .collect(Collectors.toList());
 
         // 3. 참여자 정보 조회 (2007~2012년생만 필터링)
+        // OPTIMIZATION: Batch query is already optimal, but we filter early to reduce memory
         List<User> participants = userRepository.findAllByEmailIn(participantEmails).stream()
                 .filter(user -> user.getBirthYear() != null
                         && user.getBirthYear() >= 2007
                         && user.getBirthYear() <= 2012)
                 .collect(Collectors.toList());
+
+        if (participants.isEmpty()) {
+            return VoteAnalysisDto.builder()
+                    .mostParticipatedAgeGroup("데이터 없음")
+                    .mostParticipatedPercentage(0)
+                    .genderStats(Map.of())
+                    .ageGroupStats(List.of())
+                    .relatedInterests(List.of())
+                    .funFact("참여자 연령대 정보가 충분하지 않습니다.")
+                    .build();
+        }
+
         int totalParticipants = participants.size();
 
         // 4. 나이 그룹별 통계 (birthYear + gender)
@@ -452,32 +489,31 @@ public class VoteService {
         String funFact = generateFunFact(vote, participants, genderStats, mostParticipatedAgeGroup);
 
         // 10. 선택지별 분석 (각 선택지를 선택한 사람들의 성별 분포 및 관심사)
+        // OPTIMIZATION: Build lookup maps once instead of filtering repeatedly
         List<VoteAnalysisDto.OptionAnalysis> optionAnalyses = new ArrayList<>();
-        Set<String> validParticipantEmails = participants.stream()
-                .map(User::getEmail)
-                .collect(Collectors.toSet());
+        Map<String, User> userMap = participants.stream()
+                .collect(Collectors.toMap(User::getEmail, user -> user));
+
+        // Group records by option for efficient processing
+        Map<Long, List<VoteRecord>> recordsByOption = records.stream()
+                .filter(record -> userMap.containsKey(record.getUserId()))
+                .collect(Collectors.groupingBy(VoteRecord::getSelectedOptionId));
 
         for (VoteOption option : vote.getOptions()) {
-            // 해당 선택지를 선택한 사람들의 기록
-            List<VoteRecord> optionRecords = records.stream()
-                    .filter(record -> record.getSelectedOptionId().equals(option.getId()))
-                    .filter(record -> validParticipantEmails.contains(record.getUserId()))
-                    .collect(Collectors.toList());
+            List<VoteRecord> optionRecords = recordsByOption.getOrDefault(option.getId(), List.of());
 
             if (optionRecords.isEmpty()) {
                 continue; // 참여자가 없으면 스킵
             }
 
-            // 해당 선택지를 선택한 사용자들
-            List<String> optionParticipantEmails = optionRecords.stream()
-                    .map(VoteRecord::getUserId)
-                    .collect(Collectors.toList());
-
-            List<User> optionParticipants = participants.stream()
-                    .filter(user -> optionParticipantEmails.contains(user.getEmail()))
+            // 해당 선택지를 선택한 사용자들 - Map lookup으로 최적화
+            List<User> optionParticipants = optionRecords.stream()
+                    .map(record -> userMap.get(record.getUserId()))
+                    .filter(user -> user != null)
                     .collect(Collectors.toList());
 
             int optionParticipantCount = optionParticipants.size();
+            if (optionParticipantCount == 0) continue;
 
             // 성별 통계
             Map<String, Long> optionGenderCounts = optionParticipants.stream()

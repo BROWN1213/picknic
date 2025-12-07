@@ -52,13 +52,20 @@ class ApiClient {
       (headers as any)['Authorization'] = `Bearer ${token}`;
     }
 
+    // Add timeout support (default 30 seconds)
+    const timeout = (options as any).timeout || 30000;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
     const config: RequestInit = {
       ...options,
       headers,
+      signal: controller.signal,
     };
 
     try {
       const response = await fetch(url, config);
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -77,7 +84,16 @@ class ApiClient {
 
       const data = await response.json();
       return data;
-    } catch (error) {
+    } catch (error: any) {
+      clearTimeout(timeoutId);
+
+      // Handle timeout errors
+      if (error.name === 'AbortError') {
+        const timeoutError: any = new Error('요청 시간이 초과되었습니다. 다시 시도해주세요.');
+        timeoutError.isTimeout = true;
+        throw timeoutError;
+      }
+
       console.error('API request failed:', error);
       throw error;
     }
