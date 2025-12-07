@@ -17,12 +17,14 @@ interface RewardModalProps {
   isOpen: boolean;
   onClose: () => void;
   userPoints: number;
+  onPointsUpdate?: () => void;
 }
 
 export function RewardModal({
   isOpen,
   onClose,
   userPoints,
+  onPointsUpdate,
 }: RewardModalProps) {
   const [rewards, setRewards] = useState<Reward[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -61,6 +63,9 @@ export function RewardModal({
       await rewardService.redeemReward(reward.id);
       toast.success(`${reward.name}를 교환했습니다!`);
       await loadRewards(); // Reload rewards to update stock
+      if (onPointsUpdate) {
+        onPointsUpdate();
+      }
       onClose();
     } catch (error) {
       console.error('Failed to redeem reward:', error);

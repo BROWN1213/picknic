@@ -30,6 +30,7 @@ interface ProfileSectionProps {
   onRewardClick: () => void;
   onLogout: () => void;
   dailyLimit?: DailyLimitResponse;
+  onProfileUpdate?: () => void;
 }
 
 export function ProfileSection({
@@ -42,6 +43,7 @@ export function ProfileSection({
   onRewardClick,
   onLogout,
   dailyLimit,
+  onProfileUpdate,
 }: ProfileSectionProps) {
   const [pointHistory, setPointHistory] = useState<PointHistory[]>([]);
   const [participatedCount, setParticipatedCount] = useState(0);
@@ -102,6 +104,10 @@ export function ProfileSection({
       // Refresh history
       const historyData = await pointService.getPointHistory(5);
       setPointHistory(historyData.history);
+      
+      if (onProfileUpdate) {
+        onProfileUpdate();
+      }
     } catch (error: any) {
       console.error('Daily check-in failed:', error);
       // Display the error message from backend

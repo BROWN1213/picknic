@@ -282,6 +282,25 @@ export default function App() {
   const schoolVotes = allVotesData.filter(vote => vote.schoolName);
   const allVotes = allVotesData;
 
+  const refreshUserData = async () => {
+    if (!auth.isAuthenticated && !localStorage.getItem("token")) return;
+    
+    try {
+      const [profile, limit] = await Promise.all([
+        userService.getMyProfile(),
+        pointService.getDailyLimit()
+      ]);
+
+      setUserProfile(profile);
+      setUserPoints(profile.points);
+      setUserRank(profile.rank);
+      setDailyLimit(limit);
+      return { profile, limit };
+    } catch (error) {
+      console.error('Failed to refresh user data:', error);
+    }
+  };
+
   const handleVote = async (voteId: string, optionId: string) => {
     try {
       const oldRemaining = dailyLimit.voteRemaining;
@@ -297,13 +316,8 @@ export default function App() {
       );
 
       // Refresh user profile and daily limit
-      const [profile, limit] = await Promise.all([
-        userService.getMyProfile(),
-        pointService.getDailyLimit()
-      ]);
-
-      setUserPoints(profile.points);
-      setDailyLimit(limit);
+      const data = await refreshUserData();
+      const limit = data?.limit || dailyLimit;
 
       // Show appropriate toast based on remaining count
       if (oldRemaining > 0) {
@@ -344,13 +358,8 @@ export default function App() {
       setAllVotesData(prev => [(newVote as unknown as VoteType), ...prev]);
 
       // Refresh user profile and daily limit
-      const [profile, limit] = await Promise.all([
-        userService.getMyProfile(),
-        pointService.getDailyLimit()
-      ]);
-
-      setUserPoints(profile.points);
-      setDailyLimit(limit);
+      const data = await refreshUserData();
+      const limit = data?.limit || dailyLimit;
 
       // Show appropriate toast based on remaining count
       if (oldRemaining > 0) {
@@ -986,6 +995,7 @@ export default function App() {
                     onRewardClick={() => setIsRewardModalOpen(true)}
                     onLogout={handleLogout}
                     dailyLimit={dailyLimit}
+                    onProfileUpdate={refreshUserData}
                   />
                 </div>
               )}
@@ -1064,6 +1074,7 @@ export default function App() {
         isOpen={isRewardModalOpen}
         onClose={() => setIsRewardModalOpen(false)}
         userPoints={userPoints}
+        onPointsUpdate={refreshUserData}
       />
 
       <MyVotesSheet

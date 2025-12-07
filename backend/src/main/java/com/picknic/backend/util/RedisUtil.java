@@ -1,5 +1,6 @@
 package com.picknic.backend.util;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -15,6 +16,7 @@ import java.util.Set;
 public class RedisUtil {
 
     private final RedisTemplate<String, String> redisTemplate;
+    private final ObjectMapper objectMapper;
 
     // 랭킹 점수 추가 (ZINCRBY)
     public void incrementScore(String key, String member, double score) {
@@ -67,6 +69,58 @@ public class RedisUtil {
         } catch (Exception e) {
             log.error("Redis getCounter 실패 - key: {}", key, e);
             return null;
+        }
+    }
+
+    // 객체 저장 (SET with TTL)
+    public <T> void set(String key, T value, Duration ttl) {
+        try {
+            String jsonValue = objectMapper.writeValueAsString(value);
+            redisTemplate.opsForValue().set(key, jsonValue, ttl);
+        } catch (Exception e) {
+            log.error("Redis set 실패 - key: {}", key, e);
+        }
+    }
+
+    // 객체 조회 (GET)
+    public <T> T get(String key, Class<T> clazz) {
+        try {
+            String value = redisTemplate.opsForValue().get(key);
+            if (value == null) {
+                return null;
+            }
+            return objectMapper.readValue(value, clazz);
+        } catch (Exception e) {
+            log.error("Redis get 실패 - key: {}", key, e);
+            return null;
+        }
+    }
+
+    // 키 삭제 (DELETE)
+    public void delete(String key) {
+        try {
+            redisTemplate.delete(key);
+        } catch (Exception e) {
+            log.error("Redis delete 실패 - key: {}", key, e);
+        }
+    }
+
+    // 카운터 증가 (INCR)
+    public Long increment(String key) {
+        try {
+            return redisTemplate.opsForValue().increment(key);
+        } catch (Exception e) {
+            log.error("Redis increment 실패 - key: {}", key, e);
+            return null;
+        }
+    }
+
+    // 만료 시간 설정 (EXPIRE)
+    public void setExpire(String key, Duration duration) {
+        try {
+            redisTemplate.expire(key, duration);
+        } catch (Exception e) {
+            log.error("Redis setExpire 실패 - key: {}", key, e);
         }
     }
 }

@@ -147,7 +147,10 @@ public class VoteService {
                 .map(User::getSchoolName)
                 .orElse(null);
 
-        // 10. 포인트 적립 이벤트 발행 (+1P)
+        // 10. 투표 분석 캐시 무효화 (새로운 투표가 추가되었으므로 분석 결과 갱신 필요)
+        redisUtil.delete("vote:analysis:" + voteId);
+
+        // 11. 포인트 적립 이벤트 발행 (+1P)
         eventPublisher.publishEvent(new VoteCompletedEvent(
                 this,
                 userId,
@@ -157,7 +160,7 @@ public class VoteService {
                 schoolName
         ));
 
-        // 10. 응답 생성
+        // 12. 응답 생성
         return VoteResponse.from(vote, true, request.getOptionId());
     }
 
@@ -381,13 +384,21 @@ public class VoteService {
         Vote vote = voteRepository.findByIdWithOptions(voteId)
                 .orElseThrow(() -> new IllegalArgumentException("투표를 찾을 수 없습니다."));
 
-        // 실제 투표 참여 데이터 기반 분석 생성
-        VoteAnalysisDto analysis = generateVoteAnalysis(vote);
+        // Redis 캐시에서 분석 결과 조회 (1분 TTL)
+        String cacheKey = "vote:analysis:" + voteId;
+        VoteAnalysisDto analysis = redisUtil.get(cacheKey, VoteAnalysisDto.class);
+
+        if (analysis == null) {
+            // 캐시 미스 시 실제 투표 참여 데이터 기반 분석 생성
+            analysis = generateVoteAnalysis(vote);
+            // Redis에 캐싱 (1분 TTL)
+            redisUtil.set(cacheKey, analysis, Duration.ofMinutes(1));
+        }
 
         return VoteResultResponse.from(vote, analysis);
     }
 
-    // 실제 투표 참여 데이터 기반 분석 생성
+    // 실제 투표 참여 데이터 기반 분석 생성 (최적화됨)
     private VoteAnalysisDto generateVoteAnalysis(Vote vote) {
         // 1. 투표 참여자 조회
         List<VoteRecord> records = voteRecordRepository.findByVoteId(vote.getId());
@@ -411,7 +422,6 @@ public class VoteService {
                 .collect(Collectors.toList());
 
         // 3. 참여자 정보 조회 (2007~2012년생만 필터링)
-        // OPTIMIZATION: Batch query is already optimal, but we filter early to reduce memory
         List<User> participants = userRepository.findAllByEmailIn(participantEmails).stream()
                 .filter(user -> user.getBirthYear() != null
                         && user.getBirthYear() >= 2007
@@ -430,21 +440,46 @@ public class VoteService {
         }
 
         int totalParticipants = participants.size();
-
-        // 4. 나이 그룹별 통계 (birthYear + gender)
         int currentYear = Year.now().getValue();
-        Map<String, Long> ageGroupCounts = participants.stream()
-                .filter(user -> user.getBirthYear() != null && user.getGender() != null)
-                .collect(Collectors.groupingBy(
-                        user -> {
-                            int age = currentYear - user.getBirthYear();
-                            String genderLabel = "MALE".equals(user.getGender()) ? "남성" : "여성";
-                            return age + "세 " + genderLabel;
-                        },
-                        Collectors.counting()
-                ));
 
-        // 5. 나이 그룹별 퍼센티지 계산 및 정렬
+        // 4. 사용자 맵 미리 생성 (중복 조회 방지)
+        Map<String, User> userMap = participants.stream()
+                .collect(Collectors.toMap(User::getEmail, user -> user));
+
+        // 5. 선택지별로 레코드 그룹핑 (한 번만 수행)
+        Map<Long, List<VoteRecord>> recordsByOption = records.stream()
+                .filter(record -> userMap.containsKey(record.getUserId()))
+                .collect(Collectors.groupingBy(VoteRecord::getSelectedOptionId));
+
+        // 6. 한 번의 루프로 모든 통계 계산 (성별, 연령, 관심사)
+        Map<String, Long> ageGroupCounts = new HashMap<>();
+        Map<String, Long> genderCounts = new HashMap<>();
+        Map<String, Long> interestCounts = new HashMap<>();
+
+        for (User user : participants) {
+            // 연령대 통계
+            if (user.getBirthYear() != null && user.getGender() != null) {
+                int age = currentYear - user.getBirthYear();
+                String genderLabel = "MALE".equals(user.getGender()) ? "남성" : "여성";
+                String ageGroupKey = age + "세 " + genderLabel;
+                ageGroupCounts.merge(ageGroupKey, 1L, Long::sum);
+            }
+
+            // 성별 통계
+            if (user.getGender() != null) {
+                String genderLabel = "MALE".equals(user.getGender()) ? "남성" : "여성";
+                genderCounts.merge(genderLabel, 1L, Long::sum);
+            }
+
+            // 관심사 통계
+            if (user.getInterests() != null) {
+                user.getInterests().forEach(interest ->
+                    interestCounts.merge(interest, 1L, Long::sum)
+                );
+            }
+        }
+
+        // 7. 나이 그룹별 퍼센티지 계산 및 정렬
         List<VoteAnalysisDto.AgeGroupStat> ageGroupStats = ageGroupCounts.entrySet().stream()
                 .map(entry -> VoteAnalysisDto.AgeGroupStat.builder()
                         .label(entry.getKey())
@@ -454,59 +489,38 @@ public class VoteService {
                 .limit(5)
                 .collect(Collectors.toList());
 
-        // 6. 가장 많은 나이 그룹 찾기
+        // 8. 가장 많은 나이 그룹 찾기
         String mostParticipatedAgeGroup = ageGroupStats.isEmpty() ? "데이터 없음" : ageGroupStats.get(0).getLabel();
         int mostParticipatedPercentage = ageGroupStats.isEmpty() ? 0 : ageGroupStats.get(0).getPercentage();
 
-        // 7. 성별 통계
-        Map<String, Long> genderCounts = participants.stream()
-                .filter(user -> user.getGender() != null)
-                .collect(Collectors.groupingBy(
-                        user -> "MALE".equals(user.getGender()) ? "남성" : "여성",
-                        Collectors.counting()
-                ));
-
+        // 9. 성별 통계 퍼센티지 계산
         Map<String, Integer> genderStats = genderCounts.entrySet().stream()
                 .collect(Collectors.toMap(
                         Map.Entry::getKey,
                         entry -> (int) Math.round(entry.getValue() * 100.0 / totalParticipants)
                 ));
 
-        // 8. 관심사 통계 (가장 많은 관심사 Top 5)
-        Map<String, Long> interestCounts = new HashMap<>();
-        participants.stream()
-                .filter(user -> user.getInterests() != null)
-                .flatMap(user -> user.getInterests().stream())
-                .forEach(interest -> interestCounts.merge(interest, 1L, Long::sum));
-
+        // 10. 관심사 Top 5
         List<String> relatedInterests = interestCounts.entrySet().stream()
                 .sorted((a, b) -> Long.compare(b.getValue(), a.getValue()))
                 .limit(5)
                 .map(Map.Entry::getKey)
                 .collect(Collectors.toList());
 
-        // 9. 재미있는 사실 생성
+        // 11. 재미있는 사실 생성
         String funFact = generateFunFact(vote, participants, genderStats, mostParticipatedAgeGroup);
 
-        // 10. 선택지별 분석 (각 선택지를 선택한 사람들의 성별 분포 및 관심사)
-        // OPTIMIZATION: Build lookup maps once instead of filtering repeatedly
+        // 12. 선택지별 분석 (이미 그룹핑된 데이터 활용)
         List<VoteAnalysisDto.OptionAnalysis> optionAnalyses = new ArrayList<>();
-        Map<String, User> userMap = participants.stream()
-                .collect(Collectors.toMap(User::getEmail, user -> user));
-
-        // Group records by option for efficient processing
-        Map<Long, List<VoteRecord>> recordsByOption = records.stream()
-                .filter(record -> userMap.containsKey(record.getUserId()))
-                .collect(Collectors.groupingBy(VoteRecord::getSelectedOptionId));
 
         for (VoteOption option : vote.getOptions()) {
             List<VoteRecord> optionRecords = recordsByOption.getOrDefault(option.getId(), List.of());
 
             if (optionRecords.isEmpty()) {
-                continue; // 참여자가 없으면 스킵
+                continue;
             }
 
-            // 해당 선택지를 선택한 사용자들 - Map lookup으로 최적화
+            // 해당 선택지를 선택한 사용자들 (Map lookup으로 O(1) 접근)
             List<User> optionParticipants = optionRecords.stream()
                     .map(record -> userMap.get(record.getUserId()))
                     .filter(user -> user != null)
@@ -515,27 +529,33 @@ public class VoteService {
             int optionParticipantCount = optionParticipants.size();
             if (optionParticipantCount == 0) continue;
 
-            // 성별 통계
-            Map<String, Long> optionGenderCounts = optionParticipants.stream()
-                    .filter(user -> user.getGender() != null)
-                    .collect(Collectors.groupingBy(
-                            user -> "MALE".equals(user.getGender()) ? "남성" : "여성",
-                            Collectors.counting()
-                    ));
+            // 한 번의 루프로 성별 및 관심사 통계 계산
+            Map<String, Long> optionGenderCounts = new HashMap<>();
+            Map<String, Long> optionInterestCounts = new HashMap<>();
 
+            for (User user : optionParticipants) {
+                // 성별 통계
+                if (user.getGender() != null) {
+                    String genderLabel = "MALE".equals(user.getGender()) ? "남성" : "여성";
+                    optionGenderCounts.merge(genderLabel, 1L, Long::sum);
+                }
+
+                // 관심사 통계
+                if (user.getInterests() != null) {
+                    user.getInterests().forEach(interest ->
+                        optionInterestCounts.merge(interest, 1L, Long::sum)
+                    );
+                }
+            }
+
+            // 성별 퍼센티지 계산
             Map<String, Integer> optionGenderStats = optionGenderCounts.entrySet().stream()
                     .collect(Collectors.toMap(
                             Map.Entry::getKey,
                             entry -> (int) Math.round(entry.getValue() * 100.0 / optionParticipantCount)
                     ));
 
-            // 관심사 통계 (Top 3)
-            Map<String, Long> optionInterestCounts = new HashMap<>();
-            optionParticipants.stream()
-                    .filter(user -> user.getInterests() != null)
-                    .flatMap(user -> user.getInterests().stream())
-                    .forEach(interest -> optionInterestCounts.merge(interest, 1L, Long::sum));
-
+            // 관심사 Top 3
             List<String> topInterests = optionInterestCounts.entrySet().stream()
                     .sorted((a, b) -> Long.compare(b.getValue(), a.getValue()))
                     .limit(3)

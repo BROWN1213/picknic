@@ -45,37 +45,10 @@ public class RankingService {
     public PersonalRankingResponse getPersonalRanking(String userId, int limit, int offset) {
         log.info("개인 랭킹 조회 요청 - userId: {}, limit: {}, offset: {}", userId, limit, offset);
 
-        // 1. DB에서 유효한 모든 사용자 조회 (학교가 있고, 시스템 계정이 아닌)
-        List<User> allValidUsers = userRepository.findAll().stream()
-                .filter(user -> !user.getIsSystemAccount())
-                .filter(user -> user.getSchoolName() != null && !user.getSchoolName().trim().isEmpty())
-                .toList();
+        // 1. 모든 사용자 정렬된 리스트 조회
+        List<UserWithPoints> userWithPointsList = getAllUsersSortedByPoints();
 
-        // 2. 각 사용자의 UserPoint 조회하여 Map 생성
-        List<String> userIds = allValidUsers.stream()
-                .map(User::getEmail)
-                .toList();
-
-        List<UserPoint> userPoints = userPointRepository.findAllByUserIdIn(userIds);
-        java.util.Map<String, UserPoint> userPointMap = userPoints.stream()
-                .collect(java.util.stream.Collectors.toMap(UserPoint::getUserId, up -> up));
-
-        // 3. User와 UserPoint를 결합 (정렬 전에는 순위 없이)
-        List<UserWithPoints> userWithPointsList = new ArrayList<>();
-
-        for (User user : allValidUsers) {
-            UserPoint userPoint = userPointMap.getOrDefault(user.getEmail(), new UserPoint(user.getEmail()));
-            userWithPointsList.add(new UserWithPoints(
-                    user.getEmail(),
-                    user.getNickname(),
-                    userPoint.getTotalAccumulatedPoints()
-            ));
-        }
-
-        // 포인트 기준으로 정렬 (내림차순)
-        userWithPointsList.sort((a, b) -> Long.compare(b.points, a.points));
-
-        // 정렬 후 RankerDto 생성 (순위 할당)
+        // 2. RankerDto 생성 (순위 할당)
         List<RankerDto> allRankers = new ArrayList<>();
         for (int i = 0; i < userWithPointsList.size(); i++) {
             UserWithPoints user = userWithPointsList.get(i);
@@ -87,13 +60,13 @@ public class RankingService {
                     .build());
         }
 
-        // 4. offset과 limit에 맞게 슬라이싱
+        // 3. offset과 limit에 맞게 슬라이싱
         List<RankerDto> topRankers = allRankers.stream()
                 .skip(offset)
                 .limit(limit)
                 .toList();
 
-        // 5. 내 랭킹 정보 조회
+        // 4. 내 랭킹 정보 조회
         UserPoint myUserPoint = userPointRepository.findByUserId(userId)
                 .orElse(new UserPoint(userId));
 
@@ -116,7 +89,7 @@ public class RankingService {
                 .username(myUsername)
                 .build();
 
-        // 6. 응답 구성
+        // 5. 응답 구성
         PersonalRankingResponse response = PersonalRankingResponse.builder()
                 .topRankers(topRankers)
                 .myRank(myRank)
@@ -125,6 +98,66 @@ public class RankingService {
         log.info("개인 랭킹 조회 완료 - Top {} 랭커, myRank: {}", topRankers.size(), myRank.getRank());
 
         return response;
+    }
+
+    /**
+     * 특정 사용자의 랭킹 조회
+     * 
+     * @param userId 사용자 ID
+     * @return 랭킹 (1-based), 없으면 null
+     */
+    @Transactional(readOnly = true)
+    public Long getUserRank(String userId) {
+        List<UserWithPoints> sortedUsers = getAllUsersSortedByPoints();
+        for (int i = 0; i < sortedUsers.size(); i++) {
+            if (sortedUsers.get(i).userId.equals(userId)) {
+                return (long) (i + 1);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 모든 사용자를 포인트 순으로 정렬하여 조회 (동점자 처리 포함)
+     */
+    private List<UserWithPoints> getAllUsersSortedByPoints() {
+        // 1. DB에서 유효한 모든 사용자 조회 (학교가 있고, 시스템 계정이 아닌)
+        List<User> allValidUsers = userRepository.findAll().stream()
+                .filter(user -> !user.getIsSystemAccount())
+                .filter(user -> user.getSchoolName() != null && !user.getSchoolName().trim().isEmpty())
+                .toList();
+
+        // 2. 각 사용자의 UserPoint 조회하여 Map 생성
+        List<String> userIds = allValidUsers.stream()
+                .map(User::getEmail)
+                .toList();
+
+        List<UserPoint> userPoints = userPointRepository.findAllByUserIdIn(userIds);
+        java.util.Map<String, UserPoint> userPointMap = userPoints.stream()
+                .collect(java.util.stream.Collectors.toMap(UserPoint::getUserId, up -> up));
+
+        // 3. User와 UserPoint를 결합
+        List<UserWithPoints> userWithPointsList = new ArrayList<>();
+
+        for (User user : allValidUsers) {
+            UserPoint userPoint = userPointMap.getOrDefault(user.getEmail(), new UserPoint(user.getEmail()));
+            userWithPointsList.add(new UserWithPoints(
+                    user.getEmail(),
+                    user.getNickname(),
+                    userPoint.getTotalAccumulatedPoints()
+            ));
+        }
+
+        // 포인트 기준으로 정렬 (내림차순), 동점자는 userId 오름차순
+        userWithPointsList.sort((a, b) -> {
+            int pointCompare = Long.compare(b.points, a.points);
+            if (pointCompare != 0) {
+                return pointCompare;
+            }
+            return a.userId.compareTo(b.userId);
+        });
+
+        return userWithPointsList;
     }
 
     /**
