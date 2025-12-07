@@ -18,7 +18,7 @@ import {
   SelectValue,
 } from "./ui/select";
 import { Badge } from "./ui/badge";
-import { Plus, X, Sparkles, Upload } from "lucide-react";
+import { Plus, X, Sparkles, Upload, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { ImageWithFallback } from "./figma/ImageWithFallback";
 import { voteService } from "../services/voteService";
@@ -726,6 +726,7 @@ export function CreateVoteModal({
     { text: "", emoji: "" },
   ]);
   const [createRemaining, setCreateRemaining] = useState<number>(5);
+  const [isLoading, setIsLoading] = useState(false);
 
   // 밸런스 게임일 때 항상 2개의 선택지로 고정
   useEffect(() => {
@@ -891,6 +892,7 @@ export function CreateVoteModal({
 
   const handleSubmit = async () => {
     try {
+      setIsLoading(true);
       if (voteType === "ox") {
         // O/X 투표는 자동으로 옵션 생성
         const oxOptions = [
@@ -904,10 +906,11 @@ export function CreateVoteModal({
           category,
           options: oxOptions,
         };
-        onCreateVote(voteData);
+        await onCreateVote(voteData);
       } else {
         if (options.some((opt) => !opt.text.trim())) {
           toast.error("모든 선택지를 입력해주세요");
+          setIsLoading(false);
           return;
         }
 
@@ -924,7 +927,7 @@ export function CreateVoteModal({
             votes: 0,
           })),
         };
-        onCreateVote(voteData);
+        await onCreateVote(voteData);
       }
 
       // Success/error toasts are handled by parent component (App.tsx)
@@ -933,6 +936,8 @@ export function CreateVoteModal({
     } catch (error) {
       console.error("Failed to create vote:", error);
       toast.error("투표 생성에 실패했습니다.");
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -1187,6 +1192,7 @@ export function CreateVoteModal({
               <Button
                 variant="outline"
                 onClick={handleBack}
+                disabled={isLoading}
                 className="bg-white/5 border-white/10 text-white hover:bg-white/10 h-9 text-sm"
               >
                 이전
@@ -1198,6 +1204,7 @@ export function CreateVoteModal({
                 handleReset();
                 onClose();
               }}
+              disabled={isLoading}
               className="bg-white/5 border-white/10 text-white hover:bg-white/10 h-9 text-sm"
             >
               취소
@@ -1208,11 +1215,19 @@ export function CreateVoteModal({
                   ? handleSubmit
                   : handleNext
               }
+              disabled={isLoading}
               className="flex-1 bg-gradient-to-r from-lime-500 to-emerald-500 hover:from-lime-600 hover:to-emerald-600 text-black border-0 h-9 text-sm"
             >
-              {step === 3 || (step === 2 && voteType === "ox")
-                ? "투표 생성하기"
-                : "다음"}
+              {isLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  생성 중...
+                </>
+              ) : step === 3 || (step === 2 && voteType === "ox") ? (
+                "투표 생성하기"
+              ) : (
+                "다음"
+              )}
             </Button>
           </div>
         </div>
