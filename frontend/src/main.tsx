@@ -32,7 +32,7 @@ const cognitoAuthConfig = {
   // Handle successful signin
   onSigninCallback: () => {
     // Redirect to home after successful login
-    window.history.replaceState({}, document.title, window.location.pathname);
+    window.history.replaceState({}, document.title, "/");
   },
 };
 
