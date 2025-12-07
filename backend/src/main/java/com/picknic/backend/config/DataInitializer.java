@@ -1,6 +1,8 @@
 package com.picknic.backend.config;
 
+import com.picknic.backend.domain.Reward;
 import com.picknic.backend.entity.User;
+import com.picknic.backend.repository.RewardRepository;
 import com.picknic.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.CommandLineRunner;
@@ -14,6 +16,7 @@ import java.util.Arrays;
 public class DataInitializer implements CommandLineRunner {
 
     private final UserRepository userRepository;
+    private final RewardRepository rewardRepository;
     private final PasswordEncoder passwordEncoder;
 
     @Override
@@ -56,5 +59,26 @@ public class DataInitializer implements CommandLineRunner {
             systemUser.setIsSystemAccount(true);
             userRepository.save(systemUser);
         }
+
+        // Clean up existing rewards and initialize new ones
+        rewardRepository.deleteAll();
+
+        Reward starbucksReward = new Reward(
+                "스타벅스 아메리카노 Tall",
+                "스타벅스 아메리카노 Tall 사이즈 쿠폰",
+                500,
+                100,
+                "starbucks.png"
+        );
+
+        Reward gs25Reward = new Reward(
+                "편의점 기프티콘 1000원",
+                "GS25 편의점 1000원 기프티콘",
+                300,
+                100,
+                "gs25.jpg"
+        );
+
+        rewardRepository.saveAll(Arrays.asList(starbucksReward, gs25Reward));
     }
 }

@@ -8,8 +8,7 @@ import {
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import { Badge } from "./ui/badge";
-import { Progress } from "./ui/progress";
-import { Gift, Sparkles, Coffee, ShoppingBag, Gamepad } from "lucide-react";
+import { Gift, Coffee, ShoppingBag, Gamepad } from "lucide-react";
 import { toast } from "sonner";
 import { rewardService } from "../services/rewardService";
 import type { Reward } from "../types/reward";
@@ -25,7 +24,6 @@ export function RewardModal({
   onClose,
   userPoints,
 }: RewardModalProps) {
-  const [spinning, setSpinning] = useState(false);
   const [rewards, setRewards] = useState<Reward[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -48,15 +46,6 @@ export function RewardModal({
     }
   };
 
-  const luckyBoxPrizes = [
-    "🎉 스타벅스 기프티콘",
-    "🎁 편의점 3천원",
-    "💫 포인트 +100",
-    "🎊 럭키박스 무료권",
-    "🌟 포인트 +500",
-    "⭐ 다시 도전!",
-  ];
-
   const handleExchange = async (reward: Reward) => {
     if (userPoints < reward.cost) {
       toast.error("포인트가 부족합니다");
@@ -77,20 +66,6 @@ export function RewardModal({
       console.error('Failed to redeem reward:', error);
       toast.error('리워드 교환에 실패했습니다.');
     }
-  };
-
-  const handleLuckyBox = () => {
-    if (userPoints < 200) {
-      toast.error("포인트가 부족합니다");
-      return;
-    }
-
-    setSpinning(true);
-    setTimeout(() => {
-      const prize = luckyBoxPrizes[Math.floor(Math.random() * luckyBoxPrizes.length)];
-      setSpinning(false);
-      toast.success(`당첨! ${prize}`);
-    }, 2000);
   };
 
   const getRewardIcon = (rewardName: string) => {
@@ -137,9 +112,19 @@ export function RewardModal({
                 className="p-4 bg-card border-white/10 hover:border-[#1DB954]/30 transition-all"
               >
                 <div className="flex items-center gap-4 mb-3">
-                  <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#1DB954] to-[#1aa34a] flex items-center justify-center text-white">
-                    {getRewardIcon(reward.name)}
-                  </div>
+                  {reward.imageUrl ? (
+                    <div className="w-16 h-16 rounded-lg overflow-hidden flex-shrink-0 bg-white">
+                      <img
+                        src={`/${reward.imageUrl}`}
+                        alt={reward.name}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                  ) : (
+                    <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#1DB954] to-[#1aa34a] flex items-center justify-center text-white">
+                      {getRewardIcon(reward.name)}
+                    </div>
+                  )}
                   <div className="flex-1">
                     <h3 className="text-white mb-1">{reward.name}</h3>
                     <p className="text-xs text-muted-foreground">
@@ -170,41 +155,6 @@ export function RewardModal({
                 </div>
               </Card>
             ))}
-
-            {/* Lucky Box */}
-            <Card className="p-4 bg-gradient-to-br from-[#8b5cf6]/20 to-[#ec4899]/20 border border-[#8b5cf6]/30 col-span-1 md:col-span-2">
-              <div className="flex items-center gap-4 mb-3">
-                <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#8b5cf6] to-[#ec4899] flex items-center justify-center text-white">
-                  <Sparkles className="w-8 h-8" />
-                </div>
-                <div className="flex-1">
-                  <h3 className="text-white mb-1">행운의 룰렛</h3>
-                  <p className="text-xs text-muted-foreground">
-                    랜덤으로 다양한 보상을 받을 수 있어요!
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <Badge className="bg-[#8b5cf6]/20 text-[#8b5cf6] border-0">
-                  200P
-                </Badge>
-                <Button
-                  size="sm"
-                  onClick={handleLuckyBox}
-                  disabled={userPoints < 200 || spinning}
-                  className="bg-gradient-to-r from-[#8b5cf6] to-[#ec4899] hover:from-[#7c3aed] hover:to-[#db2777] text-white border-0"
-                >
-                  {spinning ? "돌리는 중..." : "도전하기"}
-                </Button>
-              </div>
-
-              {spinning && (
-                <div className="mt-4">
-                  <Progress value={50} className="h-2 bg-white/20" />
-                </div>
-              )}
-            </Card>
           </div>
         )}
 

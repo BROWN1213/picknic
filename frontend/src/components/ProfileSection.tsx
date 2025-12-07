@@ -124,13 +124,6 @@ export function ProfileSection({
     { label: "정답률", value: "-", icon: "🎯" }, // API support needed for accuracy
   ];
 
-  const achievements = [
-    { emoji: "🔥", name: "7일 연속 출석", unlocked: true },
-    { emoji: "💯", name: "투표 100회 참여", unlocked: participatedCount >= 100 },
-    { emoji: "🎯", name: "정답률 70%", unlocked: false },
-    { emoji: "👑", name: "투표왕", unlocked: createdCount >= 10 },
-  ];
-
   const formatTimeAgo = (dateString: string) => {
     const date = new Date(dateString);
     const now = new Date();
@@ -454,30 +447,6 @@ export function ProfileSection({
               <p className="text-xs mt-1">포인트를 모아 리워드를 교환해보세요!</p>
             </div>
           )}
-        </div>
-      </Card>
-
-      {/* Achievements */}
-      <Card className="p-5 bg-card border-white/10">
-        <h3 className="mb-4 text-white">업적</h3>
-        <div className="grid grid-cols-2 gap-3">
-          {achievements.map((achievement, index) => (
-            <div
-              key={index}
-              className={`p-4 rounded-lg border text-center transition-all ${achievement.unlocked
-                ? "border-[#1DB954]/30 bg-[#1DB954]/10"
-                : "border-white/10 bg-white/5 opacity-50"
-                }`}
-            >
-              <div
-                className={`text-3xl mb-2 ${!achievement.unlocked && "grayscale"
-                  }`}
-              >
-                {achievement.emoji}
-              </div>
-              <p className="text-xs text-white">{achievement.name}</p>
-            </div>
-          ))}
         </div>
       </Card>
 
